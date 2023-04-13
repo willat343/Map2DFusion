@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+# OpenCV
+Thirdpart/opencv-2.4.9
