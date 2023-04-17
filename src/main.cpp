@@ -135,16 +135,16 @@ public:
     bool obtainFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
         // Read timestamp from line (timestamp is the name of the image)
         string line;
-        if (!getline(*in, line)) {
+        if (!getline(*in, line)) { // getline reads the next line that hasn't been read yet and *in points to the trajectory file
             return false;
         }
         stringstream ifs(line);
         string imgFileName;
-        ifs >> imgFileName; // Read timestamp
-        imgFileName = datapath + "/rgb/" + imgFileName + ".jpg"; // Get file path
+        ifs >> imgFileName; // Reads until the first space in trajectory.txt, which is the timestamp
+        imgFileName = datapath + "/rgb/" + imgFileName + ".jpg"; // Get image file path (the image files are names by timestamps)
 
         pi::timer.enter("obtainFrame"); // Start image read timer
-        frame.first = cv::imread(imgFileName); // Read image
+        frame.first = cv::imread(imgFileName); // Read image, frame.first corresponds to the first element of the pair
         pi::timer.leave("obtainFrame"); // End image read timer
 
         // Image could not be read
@@ -152,15 +152,14 @@ public:
             return false;
         }
         
-        // Read poses for the previously read frame
-        ifs >> frame.second;
+        ifs >> frame.second; // Read poses for the previously read frame, the second element of frame contains the pose
 
         // Feed translation from pose to length calculator if the GPS origin coordinates are set
         if (svar.exist("GPS.Origin")) {
             if (!lengthCalculator.get()) {
                 lengthCalculator = SPtr<TrajectoryLengthCalculator>(new TrajectoryLengthCalculator());
             }
-            lengthCalculator->feed(frame.second.get_translation());
+            lengthCalculator->feed(frame.second.get_translation()); // keeps track of trajectory to print total trajectory at the end
         }
 
         return true;
@@ -203,7 +202,7 @@ public:
             return -3;
         }
 
-        deque<std::pair<cv::Mat, pi::SE3d>> frames; // Queue containin frames (frame = pair<Image, Pose>)
+        deque<std::pair<cv::Mat, pi::SE3d>> frames; // Deque containin frames (frame = pair<Image, Pose>)
 
         // Preaload the queue with #PrepareFrameNum of frames (Default: 10)
         for (int i = 0, iend = svar.GetInt("PrepareFrameNum", 10); i < iend; i++) {
