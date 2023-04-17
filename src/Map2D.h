@@ -22,77 +22,90 @@
 *******************************************************************************/
 #ifndef MAP2D_H
 #define MAP2D_H
+#include <base/system/thread/ThreadBase.h>
+#include <base/types/SE3.h>
+#include <base/types/SPtr.h>
+#include <gui/gl/GL_Object.h>
+
 #include <deque>
 #include <opencv2/features2d/features2d.hpp>
 
-#include <base/types/SPtr.h>
-#include <base/types/SE3.h>
-#include <base/system/thread/ThreadBase.h>
-#include <gui/gl/GL_Object.h>
+#define ELE_PIXELS 256
 
-#define  ELE_PIXELS 256
-
-struct PinHoleParameters
-{
-    PinHoleParameters(){}
-    PinHoleParameters(int _w,int _h,double _fx,double _fy,double _cx,double _cy)
-        :w(_w),h(_h),fx(_fx),fy(_fy),cx(_cx),cy(_cy){}
-    double w,h,fx,fy,cx,cy;
+struct PinHoleParameters {
+    PinHoleParameters() {}
+    PinHoleParameters(int _w, int _h, double _fx, double _fy, double _cx, double _cy)
+        : w(_w),
+          h(_h),
+          fx(_fx),
+          fy(_fy),
+          cx(_cx),
+          cy(_cy) {}
+    double w, h, fx, fy, cx, cy;
 };
 
-struct Map2DPrepare//change when prepare
+struct Map2DPrepare  // change when prepare
 {
-    uint queueSize(){pi::ReadMutex lock(mutexFrames);
-                  return _frames.size();}
-
-    bool prepare(const pi::SE3d& plane,const PinHoleParameters& camera,
-                 const std::deque<std::pair<cv::Mat,pi::SE3d> >& frames);
-
-    pi::Point2d Project(const pi::Point3d& pt)
-    {
-        double zinv=1./pt.z;
-        return pi::Point2d(_camera.fx*pt.x*zinv+_camera.cx,
-                           _camera.fy*pt.y*zinv+_camera.cy);
+    uint queueSize() {
+        pi::ReadMutex lock(mutexFrames);
+        return _frames.size();
     }
 
-    pi::Point3d UnProject(const pi::Point2d& pt)
-    {
-        return pi::Point3d((pt.x-_camera.cx)*_fxinv,
-                           (pt.y-_camera.cy)*_fyinv,1.);
+    bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
+            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames);
+
+    pi::Point2d Project(const pi::Point3d &pt) {
+        double zinv = 1. / pt.z;
+        return pi::Point2d(_camera.fx * pt.x * zinv + _camera.cx, _camera.fy * pt.y * zinv + _camera.cy);
     }
 
-    std::deque<std::pair<cv::Mat,pi::SE3d> > getFrames()
-    {
+    pi::Point3d UnProject(const pi::Point2d &pt) {
+        return pi::Point3d((pt.x - _camera.cx) * _fxinv, (pt.y - _camera.cy) * _fyinv, 1.);
+    }
+
+    std::deque<std::pair<cv::Mat, pi::SE3d>> getFrames() {
         pi::ReadMutex lock(mutexFrames);
         return _frames;
     }
 
-    PinHoleParameters                        _camera;
-    double                                   _fxinv,_fyinv;
-    pi::SE3d                                 _plane;//all fixed
-    std::deque<std::pair<cv::Mat,pi::SE3d> > _frames;//camera coordinate
-    pi::MutexRW                              mutexFrames;
+    PinHoleParameters _camera;
+    double _fxinv, _fyinv;
+    pi::SE3d _plane;                                   // all fixed
+    std::deque<std::pair<cv::Mat, pi::SE3d>> _frames;  // camera coordinate
+    pi::MutexRW mutexFrames;
 };
 
-class Map2D:public pi::gl::GL_Object
-{
-
+class Map2D : public pi::gl::GL_Object {
 public:
-    enum Map2DType{NoType=0,TypeCPU=1,TypeGPU=2,TypeMultiBandCPU=3,TypeRender=4};
-    static SPtr<Map2D> create(int type=TypeCPU,bool thread=true);
+    enum Map2DType {
+        NoType = 0,
+        TypeCPU = 1,
+        TypeGPU = 2,
+        TypeMultiBandCPU = 3,
+        TypeRender = 4
+    };
+    static SPtr<Map2D> create(int type = TypeCPU, bool thread = true);
 
-    virtual ~Map2D(){}
+    virtual ~Map2D() {}
 
-    virtual bool prepare(const pi::SE3d& plane,const PinHoleParameters& camera,
-                    const std::deque<std::pair<cv::Mat,pi::SE3d> >& frames){return false;}
+    virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
+            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames) {
+        return false;
+    }
 
-    virtual bool feed(cv::Mat img,const pi::SE3d& pose){return false;}
+    virtual bool feed(cv::Mat img, const pi::SE3d &pose) {
+        return false;
+    }
 
-    virtual void draw(){}
+    virtual void draw() {}
 
-    virtual bool save(const std::string& filename){return false;}
+    virtual bool save(const std::string &filename) {
+        return false;
+    }
 
-    virtual uint queueSize(){return 0;}
+    virtual uint queueSize() {
+        return 0;
+    }
 };
 
-#endif // MAP2D_H
+#endif  // MAP2D_H

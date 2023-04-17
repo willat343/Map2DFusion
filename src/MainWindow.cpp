@@ -21,49 +21,43 @@
 
 *******************************************************************************/
 #include "MainWindow.h"
-#include "gui/controls/SvarTable.h"
-#include "Map2DItem.h"
+
 #include <base/Svar/Scommand.h>
+
+#include "Map2DItem.h"
+#include "gui/controls/SvarTable.h"
 using namespace std;
 
-void GuiHandle(void *ptr,string cmd,string para)
-{
-    if(cmd=="setMapType")
-    {
-        MainWindow* mainwindow=(MainWindow*)ptr;
+void GuiHandle(void* ptr, string cmd, string para) {
+    if (cmd == "setMapType") {
+        MainWindow* mainwindow = (MainWindow*)ptr;
         mainwindow->setMapType(para);
-    }
-    else if(cmd=="show")
-    {
-        MainWindow* mainwindow=(MainWindow*)ptr;
+    } else if (cmd == "show") {
+        MainWindow* mainwindow = (MainWindow*)ptr;
         mainwindow->call("show");
-    }
-    else if(cmd=="SetCurrentPosition")
-    {
-        cout<<"SetCurrentPosition "<<para<<endl;
-        mapcontrol::OPMapWidget* mapwidget=(mapcontrol::OPMapWidget*)ptr;
+    } else if (cmd == "SetCurrentPosition") {
+        cout << "SetCurrentPosition " << para << endl;
+        mapcontrol::OPMapWidget* mapwidget = (mapcontrol::OPMapWidget*)ptr;
         pi::Point2d latlng;
         stringstream sst(para);
-        sst>>latlng;
-        mapwidget->SetCurrentPosition(internals::PointLatLng(latlng.y,latlng.x));
-    }
-    else if(cmd=="SetZoom")
-    {
-        mapcontrol::OPMapWidget* mapwidget=(mapcontrol::OPMapWidget*)ptr;
+        sst >> latlng;
+        mapwidget->SetCurrentPosition(internals::PointLatLng(latlng.y, latlng.x));
+    } else if (cmd == "SetZoom") {
+        mapcontrol::OPMapWidget* mapwidget = (mapcontrol::OPMapWidget*)ptr;
         int level;
         stringstream sst(para);
-        sst>>level;
+        sst >> level;
         mapwidget->SetZoom(level);
-    }
-    else if(cmd=="MainWindow")
-    {
-        MainWindow* mainwindow=(MainWindow*)ptr;
+    } else if (cmd == "MainWindow") {
+        MainWindow* mainwindow = (MainWindow*)ptr;
         mainwindow->call(para);
     }
 }
 
-MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),win3d(NULL),mapwidget(NULL)
-{
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent),
+      win3d(NULL),
+      mapwidget(NULL) {
     // set window minimum size
     this->setMinimumSize(1000, 700);
 
@@ -72,49 +66,46 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),win3d(NULL),mapwidge
 
     // setup layout
     setupLayout();
-    connect(this, SIGNAL(call_signal() ), this, SLOT(call_slot()) );
-    scommand.RegisterCommand("setMapType",GuiHandle,this);
-    scommand.RegisterCommand("show",GuiHandle,this);
-    scommand.RegisterCommand("MainWindow",GuiHandle,this);
+    connect(this, SIGNAL(call_signal()), this, SLOT(call_slot()));
+    scommand.RegisterCommand("setMapType", GuiHandle, this);
+    scommand.RegisterCommand("show", GuiHandle, this);
+    scommand.RegisterCommand("MainWindow", GuiHandle, this);
 }
 
-int MainWindow::setupLayout(void)
-{
-    QWidget *wAll = new QWidget(this);
+int MainWindow::setupLayout(void) {
+    QWidget* wAll = new QWidget(this);
 
     // left pannel
     QTabWidget* m_tabWidget = new QTabWidget(this);
-    win3d   = new pi::gl::Win3D(this);
-    m_tabWidget->addTab(win3d,"Win3D");
+    win3d = new pi::gl::Win3D(this);
+    m_tabWidget->addTab(win3d, "Win3D");
 
-    if(!mapwidget){
-        mapwidget=new mapcontrol::OPMapWidget(this);
-        scommand.RegisterCommand("SetCurrentPosition",GuiHandle,mapwidget);
-        scommand.RegisterCommand("SetZoom",GuiHandle,mapwidget);
-        m_tabWidget->addTab(mapwidget,"MapWidget");
+    if (!mapwidget) {
+        mapwidget = new mapcontrol::OPMapWidget(this);
+        scommand.RegisterCommand("SetCurrentPosition", GuiHandle, mapwidget);
+        scommand.RegisterCommand("SetZoom", GuiHandle, mapwidget);
+        m_tabWidget->addTab(mapwidget, "MapWidget");
     }
 
     {
-
         mapwidget->configuration->SetAccessMode(core::AccessMode::ServerAndCache);
         mapwidget->configuration->SetTileMemorySize(200);
         mapwidget->configuration->SetCacheLocation("data/map/");
 
-        mapwidget->SetCurrentPosition(internals::PointLatLng(34.2457760,108.918389));
-        mapwidget->SetZoom(svar.GetInt("MapWidget.DefaultZoom",18));
+        mapwidget->SetCurrentPosition(internals::PointLatLng(34.2457760, 108.918389));
+        mapwidget->SetZoom(svar.GetInt("MapWidget.DefaultZoom", 18));
         mapwidget->SetMinZoom(4);
         mapwidget->SetMaxZoom(18);
         mapwidget->SetMapType(MapType::BingSatellite);
     }
 
-    mapcontrol::Map2DItem* map2ditem=new mapcontrol::Map2DItem(mapwidget->GetMapItem(),mapwidget);
+    mapcontrol::Map2DItem* map2ditem = new mapcontrol::Map2DItem(mapwidget->GetMapItem(), mapwidget);
 
-    SvarWidget* svarWidget=new SvarWidget(this);
-    m_tabWidget->addTab(svarWidget,"SvarWidget");
-
+    SvarWidget* svarWidget = new SvarWidget(this);
+    m_tabWidget->addTab(svarWidget, "SvarWidget");
 
     // overall layout
-    QHBoxLayout *hl = new QHBoxLayout(wAll);
+    QHBoxLayout* hl = new QHBoxLayout(wAll);
     wAll->setLayout(hl);
 
     hl->addWidget(m_tabWidget, 1);
@@ -124,22 +115,19 @@ int MainWindow::setupLayout(void)
     return 0;
 }
 
-bool MainWindow::setMapType(const std::string& MapType)
-{
+bool MainWindow::setMapType(const std::string& MapType) {
     mapwidget->SetMapType(MapType::TypeByStr(QString::fromStdString(MapType)));
-    cout<<"Map type has changed to "<<MapType::StrByType(mapwidget->GetMapType()).toStdString();
+    cout << "Map type has changed to " << MapType::StrByType(mapwidget->GetMapType()).toStdString();
     return true;
 }
 
-void MainWindow::keyPressEvent(QKeyEvent *event)
-{
-    int     key;
+void MainWindow::keyPressEvent(QKeyEvent* event) {
+    int key;
 
-    key  = event->key();
+    key = event->key();
 }
 
-void MainWindow::mousePressEvent(QMouseEvent *event)
-{
+void MainWindow::mousePressEvent(QMouseEvent* event) {
 #if 0
     // 1 - left
     // 2 - right
@@ -152,29 +140,22 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
 #endif
 }
 
-void MainWindow::resizeEvent(QResizeEvent *event)
-{
-}
+void MainWindow::resizeEvent(QResizeEvent* event) {}
 
-void MainWindow::timerEvent(QTimerEvent *event)
-{
-}
+void MainWindow::timerEvent(QTimerEvent* event) {}
 
-void MainWindow::call(const std::string& cmd)
-{
+void MainWindow::call(const std::string& cmd) {
     cmds.push(cmd);
     emit call_signal();
 }
 
-void MainWindow::call_slot()
-{
-    if(cmds.size())
-    {
-        std::string& cmd=(cmds.front());
-        if("show"==cmd) show();
+void MainWindow::call_slot() {
+    if (cmds.size()) {
+        std::string& cmd = (cmds.front());
+        if ("show" == cmd)
+            show();
         else
             scommand.Call(cmd);
         cmds.pop();
     }
-
 }
