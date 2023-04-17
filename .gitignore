@@ -33,3 +33,7 @@
 
 # OpenCV
 Thirdpart/opencv-2.4.9
+
+# Folders
+build/
+.vscode/
