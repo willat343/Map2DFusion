@@ -189,61 +189,72 @@ MultiBandMap2DCPU::MultiBandMap2DCPUData::MultiBandMap2DCPUData(double eleSize_,
 }
 
 bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPrepare> prepared) {
-    if (_w || _h)
+    // Check if already prepared
+    if (_w || _h) {
         return false;  // already prepared
-    {
-        _max = pi::Point3d(-1e10, -1e10, -1e10);
-        _min = -_max;
-        for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = prepared->_frames.begin();
-                it != prepared->_frames.end(); it++) {
-            pi::SE3d &pose = it->second;
-            pi::Point3d &t = pose.get_translation();
-            _max.x = t.x > _max.x ? t.x : _max.x;
-            _max.y = t.y > _max.y ? t.y : _max.y;
-            _max.z = t.z > _max.z ? t.z : _max.z;
-            _min.x = t.x < _min.x ? t.x : _min.x;
-            _min.y = t.y < _min.y ? t.y : _min.y;
-            _min.z = t.z < _min.z ? t.z : _min.z;
-        }
-        if (_min.z * _max.z <= 0)
-            return false;
-        cout << "Box:Min:" << _min << ",Max:" << _max << endl;
     }
-    // estimate w,h and bonding box
-    {
-        double maxh;
-        if (_max.z > 0)
-            maxh = _max.z;
-        else
-            maxh = -_min.z;
-        pi::Point3d line = prepared->UnProject(pi::Point2d(prepared->_camera.w, prepared->_camera.h)) -
-                           prepared->UnProject(pi::Point2d(0, 0));
-        double radius = 0.5 * maxh * sqrt((line.x * line.x + line.y * line.y));
-        _lengthPixel = svar.GetDouble("Map2D.Resolution", 0);
-        if (!_lengthPixel) {
-            cout << "Auto resolution from max height " << maxh << "m.\n";
-            _lengthPixel = 2 * radius /
-                           sqrt(prepared->_camera.w * prepared->_camera.w + prepared->_camera.h * prepared->_camera.h);
 
-            _lengthPixel /= svar.GetDouble("Map2D.Scale", 1);
-        }
-        cout << "Map2D.Resolution=" << _lengthPixel << endl;
-        _lengthPixelInv = 1. / _lengthPixel;
-        _min = _min - pi::Point3d(radius, radius, 0);
-        _max = _max + pi::Point3d(radius, radius, 0);
-        pi::Point3d center = 0.5 * (_min + _max);
-        _min = 2 * _min - center;
-        _max = 2 * _max - center;
-        _eleSize = ELE_PIXELS * _lengthPixel;
-        _eleSizeInv = 1. / _eleSize;
-        {
-            _w = ceil((_max.x - _min.x) / _eleSize);
-            _h = ceil((_max.y - _min.y) / _eleSize);
-            _max.x = _min.x + _eleSize * _w;
-            _max.y = _min.y + _eleSize * _h;
-            _data.resize(_w * _h);
-        }
+    // Find the minimum and maximum x, y, z coordinates in the loaded poses
+    _max = pi::Point3d(-1e10, -1e10, -1e10);
+    _min = -_max;
+    for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = prepared->_frames.begin();
+            it != prepared->_frames.end(); it++) {
+        pi::SE3d &pose = it->second;
+        pi::Point3d &t = pose.get_translation();
+        _max.x = t.x > _max.x ? t.x : _max.x;
+        _max.y = t.y > _max.y ? t.y : _max.y;
+        _max.z = t.z > _max.z ? t.z : _max.z;
+        _min.x = t.x < _min.x ? t.x : _min.x;
+        _min.y = t.y < _min.y ? t.y : _min.y;
+        _min.z = t.z < _min.z ? t.z : _min.z;
     }
+    // Make sure all the poses are on one side of the projection plane
+    if (_min.z * _max.z <= 0) {
+        return false;
+    }
+    cout << "Box:Min:" << _min << ",Max:" << _max << endl;
+
+    //// Compute the 3D bounding box using the camera parameters
+    // Compute max height from the min/max z
+    double maxh;
+    if (_max.z > 0) {
+        maxh = _max.z;
+    } else {
+        maxh = -_min.z;
+    }
+    // Compute the vector from 3D point back-projected from the image bottom-right corner to the 3D point back-projected
+    // from the image top-left corner
+    pi::Point3d line = prepared->UnProject(pi::Point2d(prepared->_camera.w, prepared->_camera.h)) -
+                       prepared->UnProject(pi::Point2d(0, 0));
+    // Define the radius in metres as half the max height multiplied by the line length.
+    double radius = 0.5 * maxh * sqrt(line.x * line.x + line.y * line.y);
+    // Define the pixel length as the cell size in metres. Get from configuration or compute automatically.
+    _lengthPixel = svar.GetDouble("Map2D.Resolution", 0);
+    if (!_lengthPixel) {
+        cout << "Auto resolution from max height " << maxh << "m.\n";
+        // Automatic pixel length (m) is 2*radius divided by the length of the image hypotenuse in pixels
+        _lengthPixel = 2 * radius /
+                       sqrt(prepared->_camera.w * prepared->_camera.w + prepared->_camera.h * prepared->_camera.h);
+        // Scale the pixel length
+        _lengthPixel /= svar.GetDouble("Map2D.Scale", 1);
+    }
+    cout << "Map2D.Resolution=" << _lengthPixel << endl;
+    _lengthPixelInv = 1. / _lengthPixel;
+    _min = _min - pi::Point3d(radius, radius, 0);
+    _max = _max + pi::Point3d(radius, radius, 0);
+    pi::Point3d center = 0.5 * (_min + _max);
+    _min = 2 * _min - center;
+    _max = 2 * _max - center;
+    _eleSize = ELE_PIXELS * _lengthPixel;
+    _eleSizeInv = 1. / _eleSize;
+    // Save w, h, min/max based on the number of elements (_eleSize), and resize data to w*h
+    _w = ceil((_max.x - _min.x) / _eleSize);
+    _h = ceil((_max.y - _min.y) / _eleSize);
+    _max.x = _min.x + _eleSize * _w;
+    _max.y = _min.y + _eleSize * _h;
+    _data.resize(_w * _h);
+
+    // Save the GPS origin
     _gpsOrigin = svar.get_var("GPS.Origin", _gpsOrigin);
     return true;
 }

@@ -189,7 +189,7 @@ public:
         // Parse Dataset configuration file
         svar.ParseFile(datapath + "/config.cfg");
         if (!svar.exist("Plane")) {
-            cerr<<"Plane is not defined!\n";
+            cerr << "Plane is not defined!\n";
             return -2;
         }
 
