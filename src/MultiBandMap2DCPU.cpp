@@ -50,28 +50,61 @@ using namespace std;
  min
  */
 
+/**
+ * @brief Destructor of MultiBandMap2DCPUEle
+ * 
+ */
 MultiBandMap2DCPU::MultiBandMap2DCPUEle::~MultiBandMap2DCPUEle() {
-    if (texName)
+    // Check if texture exists
+    if (texName) {
+        // Delete the texture
         pi::gl::Signal_Handle::instance().delete_texture(texName);
+    }
 }
 
+/**
+ * @brief Divide src matrix in place by weight matrix, elemnt wise
+ * 
+ * @param weight Weight matrix
+ * @param src Source matrix
+ * @return true 
+ * @return false Wrong matirx type
+ */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::normalizeUsingWeightMap(const cv::Mat &weight, cv::Mat &src) {
-    if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1))
+    // Check type of input matrixes 
+    if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1)) {
         return false;
+    }
+
+    // Element wise division of src by weight. Result is sotred in src
     pi::Point3f *srcP = (pi::Point3f *)src.data;
     float *weightP = (float *)weight.data;
-    for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++)
+    for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++) {
         *srcP = (*srcP) / (*weightP + 1e-5);
+    }
     return true;
 }
 
+/**
+ * @brief Multiply src matrix in place by weight matrix, element wise
+ * 
+ * @param weight Weight matrix
+ * @param src Source matrix
+ * @return true 
+ * @return false Wrong matirx type
+ */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::mulWeightMap(const cv::Mat &weight, cv::Mat &src) {
-    if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1))
+    // Check type of input matrixes 
+    if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1)) {
         return false;
+    }
+
+     // Element wise multiplication of src by weight. Result is sotred in src
     pi::Point3f *srcP = (pi::Point3f *)src.data;
     float *weightP = (float *)weight.data;
-    for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++)
+    for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++) {
         *srcP = (*srcP) * (*weightP);
+    }
     return true;
 }
 
@@ -140,31 +173,40 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
 }
 
 // this is a bad idea, just for test
+/**
+ * @brief Function for updating the orthomosaic texture
+ * 
+ * @param neighbors Neighbors of 
+ * @return true 
+ * @return false 
+ */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SPtr<MultiBandMap2DCPUEle>> &neighbors) {
     cv::Mat tmp = blend(neighbors);
     uint type = 0;
-    if (tmp.empty())
+    if (tmp.empty()) {
         return false;
+    }
     else if (tmp.type() == CV_16SC3) {
         tmp.convertTo(tmp, CV_8UC3);
         type = GL_UNSIGNED_BYTE;
-    } else if (tmp.type() == CV_32FC3)
+    } else if (tmp.type() == CV_32FC3) {
         type = GL_FLOAT;
-    if (!type)
-        return false;
+    }
 
+    if (!type) {
+        return false;
+    }
+
+    if (texName == 0)  // create texture
     {
-        if (texName == 0)  // create texture
-        {
-            glGenTextures(1, &texName);
-            glBindTexture(GL_TEXTURE_2D, texName);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        } else {
-            glBindTexture(GL_TEXTURE_2D, texName);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
-        }
+        glGenTextures(1, &texName);
+        glBindTexture(GL_TEXTURE_2D, texName);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, texName);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
     }
 
     SvarWithType<cv::Mat>::instance()["LastTexMat"] = tmp;
@@ -176,16 +218,17 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SP
 
 MultiBandMap2DCPU::MultiBandMap2DCPUData::MultiBandMap2DCPUData(double eleSize_, double lengthPixel_, pi::Point3d max_,
         pi::Point3d min_, int w_, int h_, const std::vector<SPtr<MultiBandMap2DCPUEle>> &d_)
-    : _eleSize(eleSize_),
-      _eleSizeInv(1. / eleSize_),
-      _lengthPixel(lengthPixel_),
-      _lengthPixelInv(1. / lengthPixel_),
-      _min(min_),
-      _max(max_),
+    : _eleSize(eleSize_), // Number of elements
+      _eleSizeInv(1. / eleSize_), // Inv. of number of elements
+      _lengthPixel(lengthPixel_), // Pixel length (Map2D.Resolution)
+      _lengthPixelInv(1. / lengthPixel_), // Inv. of pixel length
+      _min(min_), // Window minimum coordinates
+      _max(max_), // WIndow maximum coordinates
       _w(w_),
       _h(h_),
-      _data(d_) {
-    _gpsOrigin = svar.get_var("GPS.Origin", _gpsOrigin);
+      _data(d_) // Vector of MultiBandMap2DCPUEle
+    {
+    _gpsOrigin = svar.get_var("GPS.Origin", _gpsOrigin); // Set GPS origin
 }
 
 bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPrepare> prepared) {
@@ -259,13 +302,19 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPre
     return true;
 }
 
+/**
+ * @brief Constructor for MultiBandMap2DCPU
+ * 
+ * @param thread Threding flag,  true if running in separate thread
+ */
 MultiBandMap2DCPU::MultiBandMap2DCPU(bool thread)
-    : alpha(svar.GetInt("Map2D.Alpha", 0)),
-      _valid(false),
-      _thread(thread),
-      _bandNum(svar.GetInt("MultiBandMap2DCPU.BandNumber", 5)),
-      _highQualityShow(svar.GetInt("MultiBandMap2DCPU.HighQualityShow", 1)) {
-    _bandNum = min(_bandNum, static_cast<int>(ceil(log(ELE_PIXELS) / log(2.0))));
+    : alpha(svar.GetInt("Map2D.Alpha", 0)), // GL_ALPHA_TEST flag, true => enable GL_ALPHA_TEST
+      _valid(false), // Prepare flag, true if prepared
+      _thread(thread), // Threading flag, true if running in separate thread
+      _bandNum(svar.GetInt("MultiBandMap2DCPU.BandNumber", 5)), // Number of bands for the renderFrame
+      _highQualityShow(svar.GetInt("MultiBandMap2DCPU.HighQualityShow", 1)) // High quality flag, true => blend using neighbors
+    {
+    _bandNum = min(_bandNum, static_cast<int>(ceil(log(ELE_PIXELS) / log(2.0)))); // Calculate number of bands for the renderFrame
 }
 
 bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
@@ -288,9 +337,21 @@ bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &
     return false;
 }
 
+/**
+ * @brief Render new frame or insert new frame in queue
+ * 
+ * @param img New image to be rendered/inserted
+ * @param pose Pose corresponding to the image
+ * @return true Insertion was successful or rendering was successful (threading)
+ * @return false MultiBandMap2DCPU was not prepared
+ */
 bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
-    if (!_valid)
-        return false;
+    // Check if MultiBandMap2DCPU was prepared
+    if (!_valid) {
+        return false; // MultiBandMap2DCPU was not prepared
+    }
+
+    // Get p and d
     SPtr<MultiBandMap2DCPUPrepare> p;
     SPtr<MultiBandMap2DCPUData> d;
     {
@@ -298,14 +359,24 @@ bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
         p = prepared;
         d = data;
     }
+
+    // Create frame pair while converting the pose
     std::pair<cv::Mat, pi::SE3d> frame(img, p->_plane.inverse() * pose);
+
+    // If threding is enabled
     if (_thread) {
         pi::WriteMutex lock(p->mutexFrames);
+
+        // Insert new frame
         p->_frames.push_back(frame);
-        if (p->_frames.size() > 20)
+        // If more than 20 frames in queue remove the oldest one
+        if (p->_frames.size() > 20) {
             p->_frames.pop_front();
+        }
+
         return true;
     } else {
+        // If threading is not enabled render the frame
         return renderFrame(frame);
     }
 }
@@ -579,24 +650,46 @@ bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double 
     return true;
 }
 
+/**
+ * @brief Extract frame from queue
+ * 
+ * @param frame Paramter passed as reference where the frame extracted is returned
+ * @return true If frame exists
+ * @return false If queue is empty
+ */
 bool MultiBandMap2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
+    // Take Mutexes
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
+
+    // Check if there are frames to be processed
     if (prepared->_frames.size()) {
-        frame = prepared->_frames.front();
-        prepared->_frames.pop_front();
+        frame = prepared->_frames.front(); // Get frame from head of the queue
+        prepared->_frames.pop_front(); // Remove frame from the head of the queue
         return true;
-    } else
-        return false;
+    } else {
+        return false; // No frames to be processed
+    }
 }
 
+/**
+ * @brief Thread run function.
+ * 
+ */
 void MultiBandMap2DCPU::run() {
     std::pair<cv::Mat, pi::SE3d> frame;
+
+    // Check stopping condition
     while (!shouldStop()) {
+        // Check if MultiBandMap2DCPU was prepared
         if (_valid) {
+            // Get new frame from queue
             if (getFrame(frame)) {
+                // Start renderFrame timer
                 pi::timer.enter("MultiBandMap2DCPU::renderFrame");
+                // Render the newly extracted frame from the queue
                 renderFrame(frame);
+                // Stop renderFrame timer
                 pi::timer.leave("MultiBandMap2DCPU::renderFrame");
             }
         }
