@@ -175,15 +175,19 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
 
 // this is a bad idea, just for test
 /**
- * @brief Function for updating the orthomosaic texture
+ * @brief Function for updating the orthomosaic texture of an Ele
  *
- * @param neighbors Neighbors of
+ * @param neighbors Neighbors of the Ele
  * @return true
- * @return false
+ * @return false If there is no texture map returned or wrong type
  */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SPtr<MultiBandMap2DCPUEle>> &neighbors) {
+    // Blend with the neighbors (if neighbors is not NULL)
     cv::Mat tmp = blend(neighbors);
     uint type = 0;
+
+    // Check new texture map type
+    // If there is no texture map returned, fail
     if (tmp.empty()) {
         return false;
     } else if (tmp.type() == CV_16SC3) {
@@ -193,22 +197,31 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SP
         type = GL_FLOAT;
     }
 
+    // Fail if wrong type
     if (!type) {
         return false;
     }
 
-    if (texName == 0)  // create texture
+    // Check if the texture of the Ele has been created before
+    if (texName == 0)  // Texture has not been created before
     {
+        // Create new texture
         glGenTextures(1, &texName);
         glBindTexture(GL_TEXTURE_2D, texName);
+
+        // Apply blended texture map to the texture object
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
+
+        // Apply texture magnification function and texture minifying function
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     } else {
+        // Update previously created texture with the blended texture map
         glBindTexture(GL_TEXTURE_2D, texName);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tmp.cols, tmp.rows, 0, GL_BGR, type, tmp.data);
     }
 
+    // Update the last texture map and last texture map weights
     SvarWithType<cv::Mat>::instance()["LastTexMat"] = tmp;
     SvarWithType<cv::Mat>::instance()["LastTexMatWeight"] = weights[0].clone();
 
@@ -653,23 +666,43 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     return true;
 }
 
+/**
+ * @brief Increase bounds of the map
+ * 
+ * @param xmin Minimum x corrdinated from the 4 projected corner points on the plane
+ * @param ymin Minimum y corrdinated from the 4 projected corner points on the plane
+ * @param xmax Maximum x corrdinated from the 4 projected corner points on the plane
+ * @param ymax Maximum y corrdinated from the 4 projected corner points on the plane
+ * @return true ??? It always succeeds
+ * @return false 
+ */
 bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double ymax) {
+    // Start spreadMap timer
     pi::timer.enter("MultiBandMap2DCPU::spreadMap");
+
+    // Get the grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is acquired but
+    // the data can still be read/written by this and any other thread once the mutex goes out of scope.
     SPtr<MultiBandMap2DCPUData> d;
     {
         pi::ReadMutex lock(mutex);
         d = data;
     }
+
+    // Compute the indices of the elements (in the grid/data) at the corners
     int xminInt = floor((xmin - d->min().x) * d->eleSizeInv());
     int yminInt = floor((ymin - d->min().y) * d->eleSizeInv());
     int xmaxInt = ceil((xmax - d->min().x) * d->eleSizeInv());
     int ymaxInt = ceil((ymax - d->min().y) * d->eleSizeInv());
+
+    // Determing the increase in width or height required for the map
     xminInt = min(xminInt, 0);
     yminInt = min(yminInt, 0);
     xmaxInt = max(xmaxInt, d->w());
     ymaxInt = max(ymaxInt, d->h());
     int w = xmaxInt - xminInt;
     int h = ymaxInt - yminInt;
+
+    // Compute new dimensions for the map
     pi::Point2d min, max;
     {
         min.x = d->min().x + d->eleSize() * xminInt;
@@ -677,21 +710,25 @@ bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double 
         max.x = min.x + w * d->eleSize();
         max.y = min.y + h * d->eleSize();
     }
+
+    // Copy old Ele vector to newly resized vector according to new map dimensions
     std::vector<SPtr<MultiBandMap2DCPUEle>> dataOld = d->data();
     std::vector<SPtr<MultiBandMap2DCPUEle>> dataCopy;
     dataCopy.resize(w * h);
-    {
-        for (int x = 0, xend = d->w(); x < xend; x++)
-            for (int y = 0, yend = d->h(); y < yend; y++) {
-                dataCopy[x - xminInt + (y - yminInt) * w] = dataOld[y * d->w() + x];
-            }
+    for (int x = 0, xend = d->w(); x < xend; x++) {
+        for (int y = 0, yend = d->h(); y < yend; y++) {
+            dataCopy[x - xminInt + (y - yminInt) * w] = dataOld[y * d->w() + x];
+        }
     }
-    // apply
+
+    // Modify the grid data with the new dimensions while copying the old ELe vector.
     {
         pi::WriteMutex lock(mutex);
         data = SPtr<MultiBandMap2DCPUData>(new MultiBandMap2DCPUData(d->eleSize(), d->lengthPixel(),
                 pi::Point3d(max.x, max.y, d->max().z), pi::Point3d(min.x, min.y, d->min().z), w, h, dataCopy));
     }
+
+    // Stop spreadMap timer
     pi::timer.leave("MultiBandMap2DCPU::spreadMap");
     return true;
 }
@@ -743,10 +780,17 @@ void MultiBandMap2DCPU::run() {
     }
 }
 
+/**
+ * @brief Draw the OpenGL map based on Ele texture (update texture if needed)
+ * 
+ */
 void MultiBandMap2DCPU::draw() {
+    // Check if MultiBandMap2DCPU was prepared
     if (!_valid)
         return;
 
+    // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
+    // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.
     SPtr<MultiBandMap2DCPUPrepare> p;
     SPtr<MultiBandMap2DCPUData> d;
     {
@@ -754,16 +798,25 @@ void MultiBandMap2DCPU::draw() {
         p = prepared;
         d = data;
     }
+
+    // Use model view matrix
     glMatrixMode(GL_MODELVIEW);
+    // Push new matrix to the top of the stack (Identical to the one below)
     glPushMatrix();
+    // Multiply current matrix with the plane
     glMultMatrix(p->_plane);
-    // draw deque frames
+
+    //// draw deque frames
+    // Draw the pose for each frame
     pi::TicTac ticTac;
     ticTac.Tic();
     {
+        // Get all frames
         std::deque<std::pair<cv::Mat, pi::SE3d>> frames = p->getFrames();
         glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
+
+        // For each frame draw the lines for the pose. (XYZ)
         for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = frames.begin(); it != frames.end(); it++) {
             pi::SE3d &pose = it->second;
             glColor3ub(255, 0, 0);
@@ -778,7 +831,9 @@ void MultiBandMap2DCPU::draw() {
         }
         glEnd();
     }
-    // draw global area
+
+    //// draw global area
+    // Draw the border of the map if Map2D.DrawArea is true
     if (svar.GetInt("Map2D.DrawArea")) {
         pi::Point3d _min = d->min();
         pi::Point3d _max = d->max();
@@ -795,90 +850,140 @@ void MultiBandMap2DCPU::draw() {
         glEnd();
     }
 
-    // draw textures
+    //// draw textures
+    // Enable 2D texturing and blending
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     //    glEnable(GL_LIGHTING);
+
+    // If Map2D.Alpha is set, use Alpha values for blending
     if (alpha) {
         glEnable(GL_ALPHA_TEST);
         glAlphaFunc(GL_GREATER, 0.1f);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
     }
+
+    // Get the last binded texture (main texture)
     GLint last_texture_ID;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture_ID);
+
+    // Get Ele vector and map dimensions
     std::vector<SPtr<MultiBandMap2DCPUEle>> dataCopy = d->data();
     int wCopy = d->w(), hCopy = d->h();
     glColor3ub(255, 255, 255);
-    for (int x = 0; x < wCopy; x++)
+
+    // Iterate through every Ele
+    for (int x = 0; x < wCopy; x++) {
         for (int y = 0; y < hCopy; y++) {
+            // Determine Ele index in vector and its corner coordinates
             int idxData = y * wCopy + x;
             float x0 = d->min().x + x * d->eleSize();
             float y0 = d->min().y + y * d->eleSize();
             float x1 = x0 + d->eleSize();
             float y1 = y0 + d->eleSize();
-            SPtr<MultiBandMap2DCPUEle> ele = dataCopy[idxData];
-            if (!ele.get())
-                continue;
-            {
-                {
-                    pi::ReadMutex lock(ele->mutexData);
-                    if (!(ele->pyr_laplace.size() && ele->weights.size() &&
-                                ele->pyr_laplace.size() == ele->weights.size()))
-                        continue;
-                    if (ele->Ischanged) {
-                        pi::timer.enter("MultiBandMap2DCPU::updateTexture");
-                        bool updated = false, inborder = false;
-                        if (_highQualityShow) {
-                            vector<SPtr<MultiBandMap2DCPUEle>> neighbors;
-                            neighbors.reserve(9);
-                            for (int yi = y - 1; yi <= y + 1; yi++)
-                                for (int xi = x - 1; xi <= x + 1; xi++) {
-                                    if (yi < 0 || yi >= hCopy || xi < 0 || xi >= wCopy) {
-                                        neighbors.push_back(SPtr<MultiBandMap2DCPUEle>());
-                                        inborder = true;
-                                    } else
-                                        neighbors.push_back(dataCopy[yi * wCopy + xi]);
-                                }
-                            updated = ele->updateTexture(neighbors);
-                        } else
-                            updated = ele->updateTexture();
-                        pi::timer.leave("MultiBandMap2DCPU::updateTexture");
 
-                        if (updated && !inborder && svar.GetInt("Fuse2Google")) {
-                            pi::timer.enter("MultiBandMap2DCPU::fuseGoogle");
-                            stringstream cmd;
-                            pi::Point3d worldTl = p->_plane * pi::Point3d(x0, y0, 0);
-                            pi::Point3d worldBr = p->_plane * pi::Point3d(x1, y1, 0);
-                            pi::Point3d gpsTl, gpsBr;
-                            pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldTl.x, worldTl.y,
-                                    gpsTl.x, gpsTl.y);
-                            pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldBr.x, worldBr.y,
-                                    gpsBr.x, gpsBr.y);
-                            //                            cout<<"world:"<<worldBr<<"origin:"<<d->gpsOrigin()<<endl;
-                            cmd << "Map2DUpdate LastTexMat " << setiosflags(ios::fixed) << setprecision(9) << gpsTl
-                                << " " << gpsBr;
-                            //                            cout<<cmd.str()<<endl;
-                            scommand.Call("MapWidget", cmd.str());
-                            pi::timer.leave("MultiBandMap2DCPU::fuseGoogle");
+            // Get Ele from vector
+            SPtr<MultiBandMap2DCPUEle> ele = dataCopy[idxData];
+
+            // If Ele does not exist, continue
+            if (!ele.get()) {
+                continue;
+            }
+
+            {
+                // Aquire Ele mutex
+                pi::ReadMutex lock(ele->mutexData);
+
+                // If one of Laplace Pyramid and Weights matrix have 0 size 
+                // or they are not equal, then continue
+                if (!(ele->pyr_laplace.size() && ele->weights.size() &&
+                            ele->pyr_laplace.size() == ele->weights.size())) {
+                    continue;
+                }
+
+                // Check if Ele has changed during a renderFrame call
+                if (ele->Ischanged) {
+                    // Start updateTexture timer
+                    pi::timer.enter("MultiBandMap2DCPU::updateTexture");
+                    bool updated = false, inborder = false;
+
+                    // If high quality map then update texture (blend) with neighbors
+                    if (_highQualityShow) {
+                        // Get neighbors of the Ele
+                        vector<SPtr<MultiBandMap2DCPUEle>> neighbors;
+                        neighbors.reserve(9);
+                        for (int yi = y - 1; yi <= y + 1; yi++) {
+                            for (int xi = x - 1; xi <= x + 1; xi++) {
+                                if (yi < 0 || yi >= hCopy || xi < 0 || xi >= wCopy) {
+                                    neighbors.push_back(SPtr<MultiBandMap2DCPUEle>());
+                                    inborder = true;
+                                } else
+                                    neighbors.push_back(dataCopy[yi * wCopy + xi]);
+                            }
                         }
+                        // Update texture with neighbors
+                        updated = ele->updateTexture(neighbors);
+                    } else {
+                        // Update texture without neighbors
+                        updated = ele->updateTexture();
+                    }
+                    // Stop updateTexture timer
+                    pi::timer.leave("MultiBandMap2DCPU::updateTexture");
+
+                    // Check if texture update succeeded, there were no neighbors on the
+                    // border (if high quality map) and Fuse2Google is true
+                    if (updated && !inborder && svar.GetInt("Fuse2Google")) {
+                        // Start fuseGoogle timer
+                        pi::timer.enter("MultiBandMap2DCPU::fuseGoogle");
+                        stringstream cmd;
+
+                        // Calculate world coodintaes for Ele corners (Tl = Top left, Br = Bottom right)
+                        pi::Point3d worldTl = p->_plane * pi::Point3d(x0, y0, 0);
+                        pi::Point3d worldBr = p->_plane * pi::Point3d(x1, y1, 0);
+
+                        // Calculate gps coordinates for the Ele corners
+                        pi::Point3d gpsTl, gpsBr;
+                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldTl.x, worldTl.y,
+                                gpsTl.x, gpsTl.y);
+                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldBr.x, worldBr.y,
+                                gpsBr.x, gpsBr.y);
+                        // cout<<"world:"<<worldBr<<"origin:"<<d->gpsOrigin()<<endl;
+
+                        // Create update command for the MapWidget with gps coordinates.
+                        cmd << "Map2DUpdate LastTexMat " << setiosflags(ios::fixed) << setprecision(9) << gpsTl
+                            << " " << gpsBr;
+                        // cout<<cmd.str()<<endl;
+
+                        // Execute command
+                        scommand.Call("MapWidget", cmd.str());
+
+                        // Stop fuseGoogle timer
+                        pi::timer.leave("MultiBandMap2DCPU::fuseGoogle");
                     }
                 }
-                if (ele->texName) {
-                    glBindTexture(GL_TEXTURE_2D, ele->texName);
-                    glBegin(GL_QUADS);
-                    glTexCoord2f(0.0f, 0.0f);
-                    glVertex3f(x0, y0, 0);
-                    glTexCoord2f(0.0f, 1.0f);
-                    glVertex3f(x0, y1, 0);
-                    glTexCoord2f(1.0f, 1.0f);
-                    glVertex3f(x1, y1, 0);
-                    glTexCoord2f(1.0f, 0.0f);
-                    glVertex3f(x1, y0, 0);
-                    glEnd();
-                }
+            }
+
+            // Check if Ele has texture
+            if (ele->texName) {
+                // Apply texture to QUAD
+                glBindTexture(GL_TEXTURE_2D, ele->texName);
+                // Create QUAD with Ele coordinates
+                glBegin(GL_QUADS);
+                glTexCoord2f(0.0f, 0.0f);
+                glVertex3f(x0, y0, 0);
+                glTexCoord2f(0.0f, 1.0f);
+                glVertex3f(x0, y1, 0);
+                glTexCoord2f(1.0f, 1.0f);
+                glVertex3f(x1, y1, 0);
+                glTexCoord2f(1.0f, 0.0f);
+                glVertex3f(x1, y0, 0);
+                glEnd();
             }
         }
+    }
+    // Revert to last binded texture (main texture)
     glBindTexture(GL_TEXTURE_2D, last_texture_ID);
+    // Pop the previously pushed matrix
     glPopMatrix();
 }
 
