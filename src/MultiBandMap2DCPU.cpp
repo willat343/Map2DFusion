@@ -486,14 +486,18 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     xmax = d->min().x + d->eleSize() * xmaxInt;
     ymax = d->min().y + d->eleSize() * ymaxInt;
 
-    //// 3.prepare weight and warp images
+    //// 3. Prepare weight image (once only)
+    // The weightImage is created once (if frames remain the same size), and copied into weight_src.
     cv::Mat weight_src;
     if (weightImage.empty() || weightImage.cols != frame.first.cols || weightImage.rows != frame.first.rows) {
+        // Create an image of floats with the same dimensions as the image.
         pi::WriteMutex lock(mutex);
         int w = frame.first.cols;
         int h = frame.first.rows;
         weightImage.create(h, w, CV_32FC1);
         float *p = (float *)weightImage.data;
+        // Compute the weight for each pixel as a circular pattern, decaying linearly (by default) from 1 in the centre
+        // to 0 at the corners, but with a minimum of 1e-5.
         float x_center = w / 2;
         float y_center = h / 2;
         float dis_max = sqrt(x_center * x_center + y_center * y_center);
@@ -516,11 +520,16 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
         weight_src = weightImage.clone();
     }
 
+    //// 4. Warp images
+    // Copy imgPts to imgPtsCV (2D image coordinates), changing from type pi::Point2d to cv::Point2f
     std::vector<cv::Point2f> imgPtsCV;
-    {
-        imgPtsCV.reserve(imgPts.size());
-        for (int i = 0; i < imgPts.size(); i++) imgPtsCV.push_back(cv::Point2f(imgPts[i].x, imgPts[i].y));
+    imgPtsCV.reserve(imgPts.size());
+    for (int i = 0; i < imgPts.size(); i++) {
+        imgPtsCV.push_back(cv::Point2f(imgPts[i].x, imgPts[i].y));
     }
+    // Compute destPoints (2D image coordinates) from the 3D coordinates (with z = 0) of the projected corners (pts).
+    // The plane is treated as an image, and the x, y 3D coordinates are converted to pixel coordinates by shifting by
+    // the min x,y coordinates and then dividing by the length of a pixel (in metres).
     std::vector<cv::Point2f> destPoints;
     destPoints.reserve(imgPtsCV.size());
     for (int i = 0; i < imgPtsCV.size(); i++) {
@@ -528,19 +537,28 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
                 cv::Point2f((pts[i].x - xmin) * d->lengthPixelInv(), (pts[i].y - ymin) * d->lengthPixelInv()));
     }
 
+    // Compute the warp from the original 2D image corner coordinates to the 2D image coordinates on the plane.
     cv::Mat transmtx = cv::getPerspectiveTransform(imgPtsCV, destPoints);
 
+    // Convert image to 3-channel float (if MultiBandMap2DCPU.ForceFloat == 0) or 3-channel 2-byte signed int.
     cv::Mat img_src;
-    if (svar.GetInt("MultiBandMap2DCPU.ForceFloat", 0))
+    if (svar.GetInt("MultiBandMap2DCPU.ForceFloat", 0)) {
         frame.first.convertTo(img_src, CV_32FC3, 1. / 255.);
-    else
+    } else {
         frame.first.convertTo(img_src, CV_16SC3);
+    }
 
-    cv::Mat weight_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, CV_32FC1);
+    // Determine the size (in pixels) of warped weight image and RGB image as the number of grid elements between max
+    // and min multiplied by the number of pixels per element.
     cv::Mat image_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
+    cv::Mat weight_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, CV_32FC1);
+
+    // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
+    // borders. For the weight image, interpolate to the nearest pixel and use default constant border.
     cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR, cv::BORDER_REFLECT);
     cv::warpPerspective(weight_src, weight_warped, transmtx, weight_warped.size(), cv::INTER_NEAREST);
 
+    // Display/save the warped images if configured to, waiting until key is pressed.
     if (svar.GetInt("ShowWarped", 0)) {
         cv::imshow("image_warped", image_warped);
         cv::imshow("weight_warped", weight_warped);
@@ -549,10 +567,11 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
             cv::imwrite("image_warped.png", image_warped);
             cv::imwrite("weight_warped.png", weight_warped);
         }
+        // Wait forever until key is pressed
         cv::waitKey(0);
     }
 
-    // 4. blender dst to eles
+    //// 5. blender dst to eles
     std::vector<cv::Mat> pyr_laplace;
     cv::detail::createLaplacePyr(image_warped, _bandNum, pyr_laplace);
 

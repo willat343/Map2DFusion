@@ -30,6 +30,7 @@
 #include <deque>
 #include <opencv2/features2d/features2d.hpp>
 
+// Number of pixels per element (grid cell).
 #define ELE_PIXELS 256
 
 struct PinHoleParameters {
