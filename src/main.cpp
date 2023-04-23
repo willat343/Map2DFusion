@@ -320,7 +320,7 @@ int main(int argc, char **argv) {
         QApplication app(argc, argv); // Create QT Application Window
         TestSystem sys; // Create the Map2DFusion pipeline
         sys.start(); // Run the Map2DFusion pipeline as a thread
-        return app.exec();
+        return app.exec(); // Run the QT Application
     } else {
         TestSystem sys; // Create the Map2DFusion pipeline
         sys.run(); // Run the Map2DFusion pipeline as a thread

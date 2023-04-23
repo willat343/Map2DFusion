@@ -106,11 +106,20 @@ class MultiBandMap2DCPU : public Map2D, public pi::Thread {
 
     private:
         // IMPORTANT: everything should never changed after prepared!
-        double _eleSize, _lengthPixel, _eleSizeInv, _lengthPixelInv;
+
+        // Size of a grid element in metres, such that max - min = eleSize * (width or height)
+        double _eleSize, _eleSizeInv;
+        // Size of each pixel as eleSize/ELE_PIXELS where ELE_PIXELS = 256. There are 256 pixels per grid element.
+        double _lengthPixel, _lengthPixelInv;
+        // GPS origin
         pi::Point3d _gpsOrigin;
+        // 3D coordinates for min and max bounds of the grid
         pi::Point3d _max, _min;
+        // Width and height of _data
         int _w, _h;
+        // Element of each grid cell, of size width * height
         std::vector<SPtr<MultiBandMap2DCPUEle>> _data;
+        // Mutex for safe multi-threaded access
         pi::MutexRW mutexData;
     };
 

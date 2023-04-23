@@ -52,7 +52,7 @@ using namespace std;
 
 /**
  * @brief Destructor of MultiBandMap2DCPUEle
- * 
+ *
  */
 MultiBandMap2DCPU::MultiBandMap2DCPUEle::~MultiBandMap2DCPUEle() {
     // Check if texture exists
@@ -64,14 +64,14 @@ MultiBandMap2DCPU::MultiBandMap2DCPUEle::~MultiBandMap2DCPUEle() {
 
 /**
  * @brief Divide src matrix in place by weight matrix, elemnt wise
- * 
+ *
  * @param weight Weight matrix
  * @param src Source matrix
- * @return true 
+ * @return true
  * @return false Wrong matirx type
  */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::normalizeUsingWeightMap(const cv::Mat &weight, cv::Mat &src) {
-    // Check type of input matrixes 
+    // Check type of input matrixes
     if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1)) {
         return false;
     }
@@ -87,19 +87,19 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::normalizeUsingWeightMap(const cv::
 
 /**
  * @brief Multiply src matrix in place by weight matrix, element wise
- * 
+ *
  * @param weight Weight matrix
  * @param src Source matrix
- * @return true 
+ * @return true
  * @return false Wrong matirx type
  */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::mulWeightMap(const cv::Mat &weight, cv::Mat &src) {
-    // Check type of input matrixes 
+    // Check type of input matrixes
     if (!(src.type() == CV_32FC3 && weight.type() == CV_32FC1)) {
         return false;
     }
 
-     // Element wise multiplication of src by weight. Result is sotred in src
+    // Element wise multiplication of src by weight. Result is sotred in src
     pi::Point3f *srcP = (pi::Point3f *)src.data;
     float *weightP = (float *)weight.data;
     for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++) {
@@ -128,7 +128,7 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
                     int dstrows = srcrows + (borderSize << 1);
                     pyr_laplaceClone[i] = cv::Mat(dstrows, dstrows, pyr_laplace[i].type());
 
-                    for (int y = 0; y < 3; y++)
+                    for (int y = 0; y < 3; y++) {
                         for (int x = 0; x < 3; x++) {
                             const SPtr<MultiBandMap2DCPUEle> &ele = neighbors[3 * y + x];
                             pi::ReadMutex lock(ele->mutexData);
@@ -143,6 +143,7 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
                             dst.y = (y == 0) ? 0 : ((y == 1) ? borderSize : (dstrows - borderSize));
                             ele->pyr_laplace[i](src).copyTo(pyr_laplaceClone[i](dst));
                         }
+                    }
                 }
 
                 cv::detail::restoreImageFromLaplacePyr(pyr_laplaceClone);
@@ -175,18 +176,17 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
 // this is a bad idea, just for test
 /**
  * @brief Function for updating the orthomosaic texture
- * 
- * @param neighbors Neighbors of 
- * @return true 
- * @return false 
+ *
+ * @param neighbors Neighbors of
+ * @return true
+ * @return false
  */
 bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SPtr<MultiBandMap2DCPUEle>> &neighbors) {
     cv::Mat tmp = blend(neighbors);
     uint type = 0;
     if (tmp.empty()) {
         return false;
-    }
-    else if (tmp.type() == CV_16SC3) {
+    } else if (tmp.type() == CV_16SC3) {
         tmp.convertTo(tmp, CV_8UC3);
         type = GL_UNSIGNED_BYTE;
     } else if (tmp.type() == CV_32FC3) {
@@ -218,17 +218,17 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::updateTexture(const std::vector<SP
 
 MultiBandMap2DCPU::MultiBandMap2DCPUData::MultiBandMap2DCPUData(double eleSize_, double lengthPixel_, pi::Point3d max_,
         pi::Point3d min_, int w_, int h_, const std::vector<SPtr<MultiBandMap2DCPUEle>> &d_)
-    : _eleSize(eleSize_), // Number of elements
-      _eleSizeInv(1. / eleSize_), // Inv. of number of elements
-      _lengthPixel(lengthPixel_), // Pixel length (Map2D.Resolution)
-      _lengthPixelInv(1. / lengthPixel_), // Inv. of pixel length
-      _min(min_), // Window minimum coordinates
-      _max(max_), // WIndow maximum coordinates
+    : _eleSize(eleSize_),
+      _eleSizeInv(1. / eleSize_),
+      _lengthPixel(lengthPixel_),          // Pixel length (Map2D.Resolution)
+      _lengthPixelInv(1. / lengthPixel_),  // Inv. of pixel length
+      _min(min_),                          // Window minimum coordinates
+      _max(max_),                          // WIndow maximum coordinates
       _w(w_),
       _h(h_),
-      _data(d_) // Vector of MultiBandMap2DCPUEle
-    {
-    _gpsOrigin = svar.get_var("GPS.Origin", _gpsOrigin); // Set GPS origin
+      _data(d_)  // Vector of MultiBandMap2DCPUEle
+{
+    _gpsOrigin = svar.get_var("GPS.Origin", _gpsOrigin);  // Set GPS origin
 }
 
 bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPrepare> prepared) {
@@ -282,15 +282,20 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPre
         _lengthPixel /= svar.GetDouble("Map2D.Scale", 1);
     }
     cout << "Map2D.Resolution=" << _lengthPixel << endl;
+    // Inverse pixel length computed for future calculations
     _lengthPixelInv = 1. / _lengthPixel;
+    // Increase the bounds by the radius
     _min = _min - pi::Point3d(radius, radius, 0);
     _max = _max + pi::Point3d(radius, radius, 0);
+    // Compute the center
     pi::Point3d center = 0.5 * (_min + _max);
+    // Scale and shift the min and max?
     _min = 2 * _min - center;
     _max = 2 * _max - center;
+    // Compute the size of each data element in metres
     _eleSize = ELE_PIXELS * _lengthPixel;
     _eleSizeInv = 1. / _eleSize;
-    // Save w, h, min/max based on the number of elements (_eleSize), and resize data to w*h
+    // Save the grid's w, h, max, and resize to w*h
     _w = ceil((_max.x - _min.x) / _eleSize);
     _h = ceil((_max.y - _min.y) / _eleSize);
     _max.x = _min.x + _eleSize * _w;
@@ -304,17 +309,19 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPre
 
 /**
  * @brief Constructor for MultiBandMap2DCPU
- * 
+ *
  * @param thread Threding flag,  true if running in separate thread
  */
 MultiBandMap2DCPU::MultiBandMap2DCPU(bool thread)
-    : alpha(svar.GetInt("Map2D.Alpha", 0)), // GL_ALPHA_TEST flag, true => enable GL_ALPHA_TEST
-      _valid(false), // Prepare flag, true if prepared
-      _thread(thread), // Threading flag, true if running in separate thread
-      _bandNum(svar.GetInt("MultiBandMap2DCPU.BandNumber", 5)), // Number of bands for the renderFrame
-      _highQualityShow(svar.GetInt("MultiBandMap2DCPU.HighQualityShow", 1)) // High quality flag, true => blend using neighbors
-    {
-    _bandNum = min(_bandNum, static_cast<int>(ceil(log(ELE_PIXELS) / log(2.0)))); // Calculate number of bands for the renderFrame
+    : alpha(svar.GetInt("Map2D.Alpha", 0)),                      // GL_ALPHA_TEST flag, true => enable GL_ALPHA_TEST
+      _valid(false),                                             // Prepare flag, true if prepared
+      _thread(thread),                                           // Threading flag, true if running in separate thread
+      _bandNum(svar.GetInt("MultiBandMap2DCPU.BandNumber", 5)),  // Number of bands for the renderFrame
+      _highQualityShow(
+              svar.GetInt("MultiBandMap2DCPU.HighQualityShow", 1))  // High quality flag, true => blend using neighbors
+{
+    _bandNum = min(_bandNum,
+            static_cast<int>(ceil(log(ELE_PIXELS) / log(2.0))));  // Calculate number of bands for the renderFrame
 }
 
 bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
@@ -339,7 +346,7 @@ bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &
 
 /**
  * @brief Render new frame or insert new frame in queue
- * 
+ *
  * @param img New image to be rendered/inserted
  * @param pose Pose corresponding to the image
  * @return true Insertion was successful or rendering was successful (threading)
@@ -348,7 +355,7 @@ bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &
 bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
     // Check if MultiBandMap2DCPU was prepared
     if (!_valid) {
-        return false; // MultiBandMap2DCPU was not prepared
+        return false;  // MultiBandMap2DCPU was not prepared
     }
 
     // Get p and d
@@ -382,6 +389,8 @@ bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
 }
 
 bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
+    // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
+    // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.
     SPtr<MultiBandMap2DCPUPrepare> p;
     SPtr<MultiBandMap2DCPUData> d;
     {
@@ -389,34 +398,44 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
         p = prepared;
         d = data;
     }
+
+    // Check the image data matches expected dimensions and type.
     if (frame.first.cols != p->_camera.w || frame.first.rows != p->_camera.h || frame.first.type() != CV_8UC3) {
         cerr << "MultiBandMap2DCPU::renderFrame: "
                 "frame.first.cols!=p->_camera.w||frame.first.rows!=p->_camera.h||frame.first.type()!=CV_8UC3\n";
         return false;
     }
-    // 1. pose->pts
+
+    //// 1. Compute the 3D coordinates of the image corners on the plane, and save the x and y coordinates.
+    // Set imgPts to be the 4 corners of the image in pixel coordinates
     std::vector<pi::Point2d> imgPts;
-    {
-        imgPts.reserve(4);
-        imgPts.push_back(pi::Point2d(0, 0));
-        imgPts.push_back(pi::Point2d(p->_camera.w, 0));
-        imgPts.push_back(pi::Point2d(0, p->_camera.h));
-        imgPts.push_back(pi::Point2d(p->_camera.w, p->_camera.h));
-    }
+    imgPts.reserve(4);
+    imgPts.push_back(pi::Point2d(0, 0));
+    imgPts.push_back(pi::Point2d(p->_camera.w, 0));
+    imgPts.push_back(pi::Point2d(0, p->_camera.h));
+    imgPts.push_back(pi::Point2d(p->_camera.w, p->_camera.h));
+    // Set pts to be the projection of the 4 corners onto the plane
     vector<pi::Point2d> pts;
     pts.reserve(imgPts.size());
     pi::Point3d downLook(0, 0, -1);
     if (frame.second.get_translation().z < 0)
         downLook = pi::Point3d(0, 0, 1);
     for (int i = 0; i < imgPts.size(); i++) {
+        // Compute axis as p_P'^(corner) = R_P^D * p_D^(corner), the image corner point (with homogeneous scale = 1) in
+        // the orientation of the plane frame (P' has the same orientation as the plane frame P).
         pi::Point3d axis = frame.second.get_rotation() * p->UnProject(imgPts[i]);
+        // Ensure the drone pose faces the plane
         if (axis.dot(downLook) < 0.4) {
             return false;
         }
+        // Project to plane: p_P^(corner) = p_P^D - p_P'^(corner) * (z_P^D / z_P'^(corner))
         axis = frame.second.get_translation() - axis * (frame.second.get_translation().z / axis.z);
+        // Save the x and y coordinates of the projected point on the plane
         pts.push_back(pi::Point2d(axis.x, axis.y));
     }
-    // 2. dest location?
+
+    //// 2. Increase the size of the map if necessary, and compute the indices (and coordinates) of the corner points.
+    // Compute the min/max 2D coordinates from the 4 projected corner points on the plane
     double xmin = pts[0].x;
     double xmax = xmin;
     double ymin = pts[0].y;
@@ -431,38 +450,43 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
         if (pts[i].y > ymax)
             ymax = pts[i].y;
     }
+    // If the points lie outside of the current bounds (defined in data), expand the size of the map (data)
     if (xmin < d->min().x || xmax > d->max().x || ymin < d->min().y || ymax > d->max().y) {
-        if (p != prepared)  // what if prepare called?
-        {
+        // Make sure p still points to the same prepared data. This should only fail if MultiBandMap2DCPU::prepare has
+        // been called again, but this only occurs once at the start before this function is called.
+        if (p != prepared) {
             return false;
         }
+        // Increase the map bounds, exiting if this fails.
         if (!spreadMap(xmin, ymin, xmax, ymax)) {
             return false;
         } else {
             pi::ReadMutex lock(mutex);
-            if (p != prepared)  // what if prepare called?
-            {
+            if (p != prepared) {
                 return false;
             }
-            d = data;  // new data
+            // Update the data pointer because spread map creates a new data object, and thus d points to the old map.
+            d = data;
         }
     }
+    // Compute the indices of the elements (in the grid/data) at the corners
     int xminInt = floor((xmin - d->min().x) * d->eleSizeInv());
     int yminInt = floor((ymin - d->min().y) * d->eleSizeInv());
     int xmaxInt = ceil((xmax - d->min().x) * d->eleSizeInv());
     int ymaxInt = ceil((ymax - d->min().y) * d->eleSizeInv());
+    // Complain if the indices are out of bounds, which should never happen because the map was resized
     if (xminInt < 0 || yminInt < 0 || xmaxInt > d->w() || ymaxInt > d->h() || xminInt >= xmaxInt ||
             yminInt >= ymaxInt) {
         cerr << "MultiBandMap2DCPU::renderFrame:should never happen!\n";
         return false;
     }
-    {
-        xmin = d->min().x + d->eleSize() * xminInt;
-        ymin = d->min().y + d->eleSize() * yminInt;
-        xmax = d->min().x + d->eleSize() * xmaxInt;
-        ymax = d->min().y + d->eleSize() * ymaxInt;
-    }
-    // 3.prepare weight and warp images
+    // Recompute the min/max coordinates from the element indices
+    xmin = d->min().x + d->eleSize() * xminInt;
+    ymin = d->min().y + d->eleSize() * yminInt;
+    xmax = d->min().x + d->eleSize() * xmaxInt;
+    ymax = d->min().y + d->eleSize() * ymaxInt;
+
+    //// 3.prepare weight and warp images
     cv::Mat weight_src;
     if (weightImage.empty() || weightImage.cols != frame.first.cols || weightImage.rows != frame.first.rows) {
         pi::WriteMutex lock(mutex);
@@ -652,7 +676,7 @@ bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double 
 
 /**
  * @brief Extract frame from queue
- * 
+ *
  * @param frame Paramter passed as reference where the frame extracted is returned
  * @return true If frame exists
  * @return false If queue is empty
@@ -664,17 +688,17 @@ bool MultiBandMap2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
 
     // Check if there are frames to be processed
     if (prepared->_frames.size()) {
-        frame = prepared->_frames.front(); // Get frame from head of the queue
-        prepared->_frames.pop_front(); // Remove frame from the head of the queue
+        frame = prepared->_frames.front();  // Get frame from head of the queue
+        prepared->_frames.pop_front();      // Remove frame from the head of the queue
         return true;
     } else {
-        return false; // No frames to be processed
+        return false;  // No frames to be processed
     }
 }
 
 /**
  * @brief Thread run function.
- * 
+ *
  */
 void MultiBandMap2DCPU::run() {
     std::pair<cv::Mat, pi::SE3d> frame;
