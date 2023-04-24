@@ -30,6 +30,8 @@ class MultiBandMap2DCPU : public Map2D, public pi::Thread {
     typedef Map2DPrepare MultiBandMap2DCPUPrepare;
 
     struct MultiBandMap2DCPUEle {
+        // Constructor and destructor 
+        // Constructor: initializes structure variable with 0 texture and Ischanged set to false
         MultiBandMap2DCPUEle()
             : texName(0),
               Ischanged(false) {}

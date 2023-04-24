@@ -54,6 +54,9 @@ using namespace std;
  * @brief Destructor of MultiBandMap2DCPUEle
  *
  */
+// Destructor is called when 
+// A local (automatic) object with block scope goes out of scope. 
+// Or an object allocated using the new operator is explicitly deallocated using delete.
 MultiBandMap2DCPU::MultiBandMap2DCPUEle::~MultiBandMap2DCPUEle() {
     // Check if texture exists
     if (texName) {
@@ -80,7 +83,7 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::normalizeUsingWeightMap(const cv::
     pi::Point3f *srcP = (pi::Point3f *)src.data;
     float *weightP = (float *)weight.data;
     for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++) {
-        *srcP = (*srcP) / (*weightP + 1e-5);
+        *srcP = (*srcP) / (*weightP + 1e-5); // avoid null division
     }
     return true;
 }
@@ -109,8 +112,10 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::mulWeightMap(const cv::Mat &weight
 }
 
 cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<MultiBandMap2DCPUEle>> &neighbors) {
+    // Return empty matrix if laplace pyramid is empty
     if (!pyr_laplace.size())
         return cv::Mat();
+    // For non-border pixels, blend with neighbors
     if (neighbors.size() == 9) {
         // blend with neighbors, this obtains better visualization
         int flag = 0;
