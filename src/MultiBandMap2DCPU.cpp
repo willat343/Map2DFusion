@@ -120,11 +120,14 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
         // blend with neighbors, this obtains better visualization
         int flag = 0;
         for (int i = 0; i < neighbors.size(); i++) {
-            flag <<= 1;
+            flag <<= 1; // set flag to itsself shifted by one bit to the left
             if (neighbors[i].get() && neighbors[i]->pyr_laplace.size())
-                flag |= 1;
+                // flag will have bit 0 for neighbors with empty pyr_laplace and 1 otherwise
+                flag |= 1; // bitwise or
         }
         switch (flag) {
+            // 0X01FF = 511 (decimal) = 111111111 (binary)
+            // In case all 9 neighbors exist and have a non-empty pyr_laplace
             case 0X01FF: {
                 vector<cv::Mat> pyr_laplaceClone(pyr_laplace.size());
                 for (int i = 0; i < pyr_laplace.size(); i++) {
