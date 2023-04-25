@@ -996,7 +996,9 @@ void MultiBandMap2DCPU::draw() {
 }
 
 bool MultiBandMap2DCPU::save(const std::string &filename) {
-    // determin minmax
+    //// determin minmax
+    // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
+    // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.
     SPtr<MultiBandMap2DCPUPrepare> p;
     SPtr<MultiBandMap2DCPUData> d;
     {
@@ -1004,67 +1006,92 @@ bool MultiBandMap2DCPU::save(const std::string &filename) {
         p = prepared;
         d = data;
     }
-    if (d->w() == 0 || d->h() == 0)
-        return false;
 
+    // Check Ele matrix dimmensions are non-zero
+    if (d->w() == 0 || d->h() == 0) {
+        return false;
+    }
+
+    // Determine the minimum and maximum size
+    // Does not take into consideration unused Eles
     pi::Point2i minInt(1e6, 1e6), maxInt(-1e6, -1e6);
     int contentCount = 0;
-    for (int x = 0; x < d->w(); x++)
+    for (int x = 0; x < d->w(); x++) {
         for (int y = 0; y < d->h(); y++) {
             SPtr<MultiBandMap2DCPUEle> ele = d->data()[x + y * d->w()];
-            if (!ele.get())
+            if (!ele.get()) {
                 continue;
+            }
+
             {
                 pi::ReadMutex lock(ele->mutexData);
-                if (!ele->pyr_laplace.size())
+                if (!ele->pyr_laplace.size()) {
                     continue;
+                }
             }
+
             contentCount++;
             minInt.x = min(minInt.x, x);
             minInt.y = min(minInt.y, y);
             maxInt.x = max(maxInt.x, x);
             maxInt.y = max(maxInt.y, y);
         }
+    }
 
+    // Determine w*h dimmension based on used Eles
     maxInt = maxInt + pi::Point2i(1, 1);
     pi::Point2i wh = maxInt - minInt;
-    vector<cv::Mat> pyr_laplace(_bandNum + 1);
-    vector<cv::Mat> pyr_weights(_bandNum + 1);
-    for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
 
-    for (int x = minInt.x; x < maxInt.x; x++)
+    // Initialize final Laplace pyramids and weights
+    vector<cv::Mat> pyr_laplace(_bandNum + 1);
+    //vector<cv::Mat> pyr_weights(_bandNum + 1);
+    //for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
+    cv::Mat pyr_weights = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
+
+    
+    for (int x = minInt.x; x < maxInt.x; x++) {
         for (int y = minInt.y; y < maxInt.y; y++) {
             SPtr<MultiBandMap2DCPUEle> ele = d->data()[x + y * d->w()];
-            if (!ele.get())
+            if (!ele.get()) {
                 continue;
+            }
+
             {
                 pi::ReadMutex lock(ele->mutexData);
-                if (!ele->pyr_laplace.size())
+                if (!ele->pyr_laplace.size()) {
                     continue;
+                }
                 int width = ELE_PIXELS, height = ELE_PIXELS;
 
                 for (int i = 0; i <= _bandNum; ++i) {
                     cv::Rect rect(width * (x - minInt.x), height * (y - minInt.y), width, height);
-                    if (pyr_laplace[i].empty())
+                    if (pyr_laplace[i].empty()) {
                         pyr_laplace[i] = cv::Mat::zeros(wh.y * height, wh.x * width, ele->pyr_laplace[i].type());
+                    }
                     ele->pyr_laplace[i].copyTo(pyr_laplace[i](rect));
-                    if (i == 0)
-                        ele->weights[i].copyTo(pyr_weights[i](rect));
+                    if (i == 0) {
+                        //ele->weights[i].copyTo(pyr_weights[i](rect));
+                        ele->weights[i].copyTo(pyr_weights(rect));
+                    }
                     height >>= 1;
                     width >>= 1;
                 }
             }
         }
+    }
 
     cv::detail::restoreImageFromLaplacePyr(pyr_laplace);
 
     cv::Mat result = pyr_laplace[0];
-    if (result.type() == CV_16SC3)
+    if (result.type() == CV_16SC3) {
         result.convertTo(result, CV_8UC3);
-    result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
+    }
+    //result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
+    result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights == 0);
     cv::imwrite(filename, result);
     cout << "Resolution:[" << result.cols << " " << result.rows << "]";
-    if (svar.exist("GPS.Origin"))
+    if (svar.exist("GPS.Origin")) {
         cout << ",_lengthPixel:" << d->lengthPixel() << ",Area:" << contentCount * d->eleSize() * d->eleSize() << endl;
+    }
     return true;
 }
