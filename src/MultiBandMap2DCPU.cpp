@@ -601,6 +601,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     std::vector<cv::Mat> pyr_weights(_bandNum + 1);
     pyr_weights[0] = weight_warped;
     for (int i = 0; i < _bandNum; ++i) {
+        // Apply Gaussian kernel on level i of pyramid and downsample it by rejecting even rows and columns
         cv::pyrDown(pyr_weights[i], pyr_weights[i + 1]);
     }
 
