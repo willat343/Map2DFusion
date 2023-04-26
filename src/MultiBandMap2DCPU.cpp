@@ -571,7 +571,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
 
     // Determine the size (in pixels) of warped weight image and RGB image as the number of grid elements between max
     // and min multiplied by the number of pixels per element.
-    cv::Mat image_warped((ymaxInt - yminInt) * ELE_s is donePIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
+    cv::Mat image_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
     cv::Mat weight_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, CV_32FC1);
 
     // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
@@ -601,7 +601,6 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     std::vector<cv::Mat> pyr_weights(_bandNum + 1);
     pyr_weights[0] = weight_warped;
     for (int i = 0; i < _bandNum; ++i) {
-        // Apply Gaussian kernel on level i of pyramid and downsample it by rejecting even rows and columns
         cv::pyrDown(pyr_weights[i], pyr_weights[i + 1]);
     }
 
@@ -919,7 +918,7 @@ void MultiBandMap2DCPU::draw() {
             // Get Ele from vector
             SPtr<MultiBandMap2DCPUEle> ele = dataCopy[idxData];
 
-            // If Ele does not exist, continue
+            // If Ele does not exist, then skip element
             if (!ele.get()) {
                 continue;
             }
@@ -928,8 +927,7 @@ void MultiBandMap2DCPU::draw() {
                 // Aquire Ele mutex
                 pi::ReadMutex lock(ele->mutexData);
 
-                // If one of Laplace Pyramid and Weights matrix have 0 size
-                // or they are not equal, then continue
+                // If one of Laplace Pyramid and Weights matrix have 0 size or they are not equal, then skip element
                 if (!(ele->pyr_laplace.size() && ele->weights.size() &&
                             ele->pyr_laplace.size() == ele->weights.size())) {
                     continue;
