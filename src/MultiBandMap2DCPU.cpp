@@ -54,8 +54,8 @@ using namespace std;
  * @brief Destructor of MultiBandMap2DCPUEle
  *
  */
-// Destructor is called when 
-// A local (automatic) object with block scope goes out of scope. 
+// Destructor is called when
+// A local (automatic) object with block scope goes out of scope.
 // Or an object allocated using the new operator is explicitly deallocated using delete.
 MultiBandMap2DCPU::MultiBandMap2DCPUEle::~MultiBandMap2DCPUEle() {
     // Check if texture exists
@@ -83,7 +83,7 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUEle::normalizeUsingWeightMap(const cv::
     pi::Point3f *srcP = (pi::Point3f *)src.data;
     float *weightP = (float *)weight.data;
     for (float *Pend = weightP + weight.cols * weight.rows; weightP != Pend; weightP++, srcP++) {
-        *srcP = (*srcP) / (*weightP + 1e-5); // avoid null division
+        *srcP = (*srcP) / (*weightP + 1e-5);  // avoid null division
     }
     return true;
 }
@@ -120,10 +120,10 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
         // blend with neighbors, this obtains better visualization
         int flag = 0;
         for (int i = 0; i < neighbors.size(); i++) {
-            flag <<= 1; // set flag to itsself shifted by one bit to the left
+            flag <<= 1;  // set flag to itsself shifted by one bit to the left
             if (neighbors[i].get() && neighbors[i]->pyr_laplace.size())
                 // flag will have bit 0 for neighbors with empty pyr_laplace and 1 otherwise
-                flag |= 1; // bitwise or
+                flag |= 1;  // bitwise or
         }
         switch (flag) {
             // 0X01FF = 511 (decimal) = 111111111 (binary)
@@ -592,11 +592,12 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
         cv::waitKey(0);
     }
 
-    //// 5. ??? blender dst to eles
-    // Create an N-level Laplacian pyramid where N equals the number of bands
+    //// 5. Perform the blending of the warped image with the grid (data)
+    // Create an N-level Laplacian pyramid of the RGB image where N equals the number of bands K
     std::vector<cv::Mat> pyr_laplace;
     cv::detail::createLaplacePyr(image_warped, _bandNum, pyr_laplace);
 
+    // Create the corresponding weight pyramid, by creating K + 1 pyramidal weight images.
     std::vector<cv::Mat> pyr_weights(_bandNum + 1);
     pyr_weights[0] = weight_warped;
     for (int i = 0; i < _bandNum; ++i) {
@@ -604,70 +605,75 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     }
 
     pi::timer.enter("MultiBandMap2DCPU::Apply");
+    // Iterate over all cells in the maximal rectangular region where image projects onto the plane
     std::vector<SPtr<MultiBandMap2DCPUEle>> dataCopy = d->data();
     for (int x = xminInt; x < xmaxInt; x++)
         for (int y = yminInt; y < ymaxInt; y++) {
+            // Get the cell/element patch
             SPtr<MultiBandMap2DCPUEle> ele = dataCopy[y * d->w() + x];
             if (!ele.get()) {
                 ele = d->ele(y * d->w() + x);
             }
-            {
-                pi::WriteMutex lock(ele->mutexData);
-                if (!ele->pyr_laplace.size()) {
-                    ele->pyr_laplace.resize(_bandNum + 1);
-                    ele->weights.resize(_bandNum + 1);
-                }
 
-                int width = ELE_PIXELS, height = ELE_PIXELS;
-
-                for (int i = 0; i <= _bandNum; ++i) {
-                    if (ele->pyr_laplace[i].empty()) {
-                        // fresh
-                        cv::Rect rect(width * (x - xminInt), height * (y - yminInt), width, height);
-                        pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
-                        pyr_weights[i](rect).copyTo(ele->weights[i]);
-                    } else {
-                        if (pyr_laplace[i].type() == CV_32FC3) {
-                            int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
-                            int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
-
-                            pi::Point3f *srcL = ((pi::Point3f *)pyr_laplace[i].data) + org;
-                            float *srcW = ((float *)pyr_weights[i].data) + org;
-
-                            pi::Point3f *dstL = (pi::Point3f *)ele->pyr_laplace[i].data;
-                            float *dstW = (float *)ele->weights[i].data;
-
-                            for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
-                                for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
-                                    if ((*srcW) >= (*dstW)) {
-                                        *dstL = (*srcL);
-                                        *dstW = *srcW;
-                                    }
-                                }
-                        } else if (pyr_laplace[i].type() == CV_16SC3) {
-                            int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
-                            int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
-
-                            pi::Point3_<short> *srcL = ((pi::Point3_<short> *)pyr_laplace[i].data) + org;
-                            float *srcW = ((float *)pyr_weights[i].data) + org;
-
-                            pi::Point3_<short> *dstL = (pi::Point3_<short> *)ele->pyr_laplace[i].data;
-                            float *dstW = (float *)ele->weights[i].data;
-
-                            for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
-                                for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
-                                    if ((*srcW) >= (*dstW)) {
-                                        *dstL = (*srcL);
-                                        *dstW = *srcW;
-                                    }
-                                }
-                        }
-                    }
-                    width /= 2;
-                    height /= 2;
-                }
-                ele->Ischanged = true;
+            // Initialise the element if it hasn't been initialised yet (set size of laplacian pyramid and weights)
+            pi::WriteMutex lock(ele->mutexData);
+            if (!ele->pyr_laplace.size()) {
+                ele->pyr_laplace.resize(_bandNum + 1);
+                ele->weights.resize(_bandNum + 1);
             }
+
+            // Iterate over the Laplacian pyramid levels. Start with width/height equal to the patch size (256x256) and
+            // halve this size at each level
+            int width = ELE_PIXELS, height = ELE_PIXELS;
+            for (int i = 0; i <= _bandNum; ++i) {
+                // If the 
+                if (ele->pyr_laplace[i].empty()) {
+                    // fresh
+                    cv::Rect rect(width * (x - xminInt), height * (y - yminInt), width, height);
+                    pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
+                    pyr_weights[i](rect).copyTo(ele->weights[i]);
+                } else {
+                    if (pyr_laplace[i].type() == CV_32FC3) {
+                        int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
+                        int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
+
+                        pi::Point3f *srcL = ((pi::Point3f *)pyr_laplace[i].data) + org;
+                        float *srcW = ((float *)pyr_weights[i].data) + org;
+
+                        pi::Point3f *dstL = (pi::Point3f *)ele->pyr_laplace[i].data;
+                        float *dstW = (float *)ele->weights[i].data;
+
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
+                            for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
+                                if ((*srcW) >= (*dstW)) {
+                                    *dstL = (*srcL);
+                                    *dstW = *srcW;
+                                }
+                            }
+                    } else if (pyr_laplace[i].type() == CV_16SC3) {
+                        int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
+                        int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
+
+                        pi::Point3_<short> *srcL = ((pi::Point3_<short> *)pyr_laplace[i].data) + org;
+                        float *srcW = ((float *)pyr_weights[i].data) + org;
+
+                        pi::Point3_<short> *dstL = (pi::Point3_<short> *)ele->pyr_laplace[i].data;
+                        float *dstW = (float *)ele->weights[i].data;
+
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
+                            for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
+                                if ((*srcW) >= (*dstW)) {
+                                    *dstL = (*srcL);
+                                    *dstW = *srcW;
+                                }
+                            }
+                    }
+                }
+                // Halve size at each level
+                width /= 2;
+                height /= 2;
+            }
+            ele->Ischanged = true;
         }
     pi::timer.leave("MultiBandMap2DCPU::Apply");
 
@@ -676,13 +682,13 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
 
 /**
  * @brief Increase bounds of the map
- * 
+ *
  * @param xmin Minimum x corrdinated from the 4 projected corner points on the plane
  * @param ymin Minimum y corrdinated from the 4 projected corner points on the plane
  * @param xmax Maximum x corrdinated from the 4 projected corner points on the plane
  * @param ymax Maximum y corrdinated from the 4 projected corner points on the plane
  * @return true ??? It always succeeds
- * @return false 
+ * @return false
  */
 bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double ymax) {
     // Start spreadMap timer
@@ -790,7 +796,7 @@ void MultiBandMap2DCPU::run() {
 
 /**
  * @brief Draw the OpenGL map based on Ele texture (update texture if needed)
- * 
+ *
  */
 void MultiBandMap2DCPU::draw() {
     // Check if MultiBandMap2DCPU was prepared
@@ -902,7 +908,7 @@ void MultiBandMap2DCPU::draw() {
                 // Aquire Ele mutex
                 pi::ReadMutex lock(ele->mutexData);
 
-                // If one of Laplace Pyramid and Weights matrix have 0 size 
+                // If one of Laplace Pyramid and Weights matrix have 0 size
                 // or they are not equal, then continue
                 if (!(ele->pyr_laplace.size() && ele->weights.size() &&
                             ele->pyr_laplace.size() == ele->weights.size())) {
@@ -951,15 +957,15 @@ void MultiBandMap2DCPU::draw() {
 
                         // Calculate gps coordinates for the Ele corners
                         pi::Point3d gpsTl, gpsBr;
-                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldTl.x, worldTl.y,
-                                gpsTl.x, gpsTl.y);
-                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldBr.x, worldBr.y,
-                                gpsBr.x, gpsBr.y);
+                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldTl.x, worldTl.y, gpsTl.x,
+                                gpsTl.y);
+                        pi::calcLngLatFromDistance(d->gpsOrigin().x, d->gpsOrigin().y, worldBr.x, worldBr.y, gpsBr.x,
+                                gpsBr.y);
                         // cout<<"world:"<<worldBr<<"origin:"<<d->gpsOrigin()<<endl;
 
                         // Create update command for the MapWidget with gps coordinates.
-                        cmd << "Map2DUpdate LastTexMat " << setiosflags(ios::fixed) << setprecision(9) << gpsTl
-                            << " " << gpsBr;
+                        cmd << "Map2DUpdate LastTexMat " << setiosflags(ios::fixed) << setprecision(9) << gpsTl << " "
+                            << gpsBr;
                         // cout<<cmd.str()<<endl;
 
                         // Execute command
@@ -1044,11 +1050,10 @@ bool MultiBandMap2DCPU::save(const std::string &filename) {
 
     // Initialize final Laplace pyramids and weights
     vector<cv::Mat> pyr_laplace(_bandNum + 1);
-    //vector<cv::Mat> pyr_weights(_bandNum + 1);
-    //for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
+    // vector<cv::Mat> pyr_weights(_bandNum + 1);
+    // for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
     cv::Mat pyr_weights = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
 
-    
     for (int x = minInt.x; x < maxInt.x; x++) {
         for (int y = minInt.y; y < maxInt.y; y++) {
             SPtr<MultiBandMap2DCPUEle> ele = d->data()[x + y * d->w()];
@@ -1070,7 +1075,7 @@ bool MultiBandMap2DCPU::save(const std::string &filename) {
                     }
                     ele->pyr_laplace[i].copyTo(pyr_laplace[i](rect));
                     if (i == 0) {
-                        //ele->weights[i].copyTo(pyr_weights[i](rect));
+                        // ele->weights[i].copyTo(pyr_weights[i](rect));
                         ele->weights[i].copyTo(pyr_weights(rect));
                     }
                     height >>= 1;
@@ -1086,7 +1091,7 @@ bool MultiBandMap2DCPU::save(const std::string &filename) {
     if (result.type() == CV_16SC3) {
         result.convertTo(result, CV_8UC3);
     }
-    //result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
+    // result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
     result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights == 0);
     cv::imwrite(filename, result);
     cout << "Resolution:[" << result.cols << " " << result.rows << "]";
