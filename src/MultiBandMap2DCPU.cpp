@@ -571,7 +571,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
 
     // Determine the size (in pixels) of warped weight image and RGB image as the number of grid elements between max
     // and min multiplied by the number of pixels per element.
-    cv::Mat image_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
+    cv::Mat image_warped((ymaxInt - yminInt) * ELE_s is donePIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
     cv::Mat weight_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, CV_32FC1);
 
     // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
@@ -626,31 +626,49 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
             // halve this size at each level
             int width = ELE_PIXELS, height = ELE_PIXELS;
             for (int i = 0; i <= _bandNum; ++i) {
-                // If the 
                 if (ele->pyr_laplace[i].empty()) {
-                    // fresh
+                    //// Case 1: Element is new (laplacian pyramid not set)
+                    // Create rectangular region of size width*height (256/2^i * 256/2^i) centered on current element
                     cv::Rect rect(width * (x - xminInt), height * (y - yminInt), width, height);
+                    // Copy that region of the warped image's laplacian pyramid and warped weight image to element's
+                    // laplacian pyramid and weights
                     pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
                     pyr_weights[i](rect).copyTo(ele->weights[i]);
                 } else {
+                    //// Case 2: Element is not new and blending is required
+
                     if (pyr_laplace[i].type() == CV_32FC3) {
+                        //// Blending procedure for 3-channel float image
+
+                        // org = pixel index of the element origin in the current laplacian pyramid and weights image
                         int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
+                        // skip = num pixels to skip when iterating over current laplacian pyramid and weights image
                         int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
 
+                        // srcL = pointer to a pixel in the current laplacian pyramid image, starting at element origin
                         pi::Point3f *srcL = ((pi::Point3f *)pyr_laplace[i].data) + org;
+                        // srcW = pointer to a pixel in the current weights image, starting at element origin
                         float *srcW = ((float *)pyr_weights[i].data) + org;
 
+                        // dstL = pointer to a pixel in the element's current laplacian pyramid image
                         pi::Point3f *dstL = (pi::Point3f *)ele->pyr_laplace[i].data;
+                        // dstW = pointer to a pixel in the element's current weights image
                         float *dstW = (float *)ele->weights[i].data;
 
-                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
+                        // Iterate over every pixel in the patch (size depends on level, (256/2^i, 256/2^i))
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip) {
                             for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
+                                // If the weight is higher in the (new) image for this pixel than saved in the element,
+                                // then update the laplacian pyramid pixel value and weight value in the element.
                                 if ((*srcW) >= (*dstW)) {
                                     *dstL = (*srcL);
                                     *dstW = *srcW;
                                 }
                             }
+                        }
                     } else if (pyr_laplace[i].type() == CV_16SC3) {
+                        //// Same procedure as 3-channel float image but for 3-channel 2-byte signed integers
+
                         int org = (x - xminInt) * width + (y - yminInt) * height * pyr_laplace[i].cols;
                         int skip = pyr_laplace[i].cols - ele->pyr_laplace[i].cols;
 
@@ -673,6 +691,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
                 width /= 2;
                 height /= 2;
             }
+            // Set a flag that the element has changed
             ele->Ischanged = true;
         }
     pi::timer.leave("MultiBandMap2DCPU::Apply");
