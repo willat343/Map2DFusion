@@ -129,19 +129,30 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
             // 0X01FF = 511 (decimal) = 111111111 (binary)
             // In case all 9 neighbors exist and have a non-empty pyr_laplace
             case 0X01FF: {
+                //// Create a new laplacian pyramid from the 3x3 element neighbourhood
                 vector<cv::Mat> pyr_laplaceClone(pyr_laplace.size());
+                // Iterate over the laplacian pyramid levels
                 for (int i = 0; i < pyr_laplace.size(); i++) {
+                    // Note that 1 << x == 2^x so borderSize is 2 ^ {K - i} (e.g. 32 for i == 0, then 16, 8, 4, 2, 1)
                     int borderSize = 1 << (pyr_laplace.size() - i - 1);
+                    // srcros is 256 for i == 0, then 128, 64, 32, 16, 8
                     int srcrows = pyr_laplace[i].rows;
+                    // Note that x << 1 = x*2 so (borderSize << 1) is 64 for i == 0, then 32, 16, 8, 4, 2
+                    // Thus dstrows is 320 for i == 0, then 160, 80, 40, 20, 10
                     int dstrows = srcrows + (borderSize << 1);
+                    // Create the new image of size dstrows * dstrows
                     pyr_laplaceClone[i] = cv::Mat(dstrows, dstrows, pyr_laplace[i].type());
 
+                    // Iterate over the 3x3 neighbourhood of elements
                     for (int y = 0; y < 3; y++) {
                         for (int x = 0; x < 3; x++) {
+                            // Get the element from the neighbourhood
                             const SPtr<MultiBandMap2DCPUEle> &ele = neighbors[3 * y + x];
                             pi::ReadMutex lock(ele->mutexData);
                             if (ele->pyr_laplace[i].empty())
                                 continue;
+                            // Copy a region from the neighbourhood to the new laplacian pyramid level image with a
+                            // slightly bigger size. This thus includes the neighbouring pixels in the new image. 
                             cv::Rect src, dst;
                             src.width = dst.width = (x == 1) ? srcrows : borderSize;
                             src.height = dst.height = (y == 1) ? srcrows : borderSize;
@@ -149,19 +160,20 @@ cv::Mat MultiBandMap2DCPU::MultiBandMap2DCPUEle::blend(const std::vector<SPtr<Mu
                             src.y = (y == 0) ? (srcrows - borderSize) : 0;
                             dst.x = (x == 0) ? 0 : ((x == 1) ? borderSize : (dstrows - borderSize));
                             dst.y = (y == 0) ? 0 : ((y == 1) ? borderSize : (dstrows - borderSize));
+                            // Perform the copy of the region
                             ele->pyr_laplace[i](src).copyTo(pyr_laplaceClone[i](dst));
                         }
                     }
                 }
 
+                // Restore RGB image from laplacian, which is larger than an element size
                 cv::detail::restoreImageFromLaplacePyr(pyr_laplaceClone);
 
-                {
-                    cv::Mat result;
-                    int borderSize = 1 << (pyr_laplace.size() - 1);
-                    pyr_laplaceClone[0](cv::Rect(borderSize, borderSize, ELE_PIXELS, ELE_PIXELS)).copyTo(result);
-                    return result.setTo(cv::Scalar::all(0), weights[0] == 0);
-                }
+                // Extract the 256 * 256 image from the center of the restored image
+                cv::Mat result;
+                int borderSize = 1 << (pyr_laplace.size() - 1);
+                pyr_laplaceClone[0](cv::Rect(borderSize, borderSize, ELE_PIXELS, ELE_PIXELS)).copyTo(result);
+                return result.setTo(cv::Scalar::all(0), weights[0] == 0);
             } break;
             default:
                 break;
