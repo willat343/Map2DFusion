@@ -1019,6 +1019,13 @@ void MultiBandMap2DCPU::draw() {
     glPopMatrix();
 }
 
+/**
+ * @brief Save orthomosaic to an image file
+ * 
+ * @param filename Output file name
+ * @return true Successful
+ * @return false No Eles in the MultiBandMap2DCPUData
+ */
 bool MultiBandMap2DCPU::save(const std::string &filename) {
     //// determin minmax
     // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
@@ -1072,49 +1079,74 @@ bool MultiBandMap2DCPU::save(const std::string &filename) {
     // for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
     cv::Mat pyr_weights = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
 
+    // Iterate through each Ele
     for (int x = minInt.x; x < maxInt.x; x++) {
         for (int y = minInt.y; y < maxInt.y; y++) {
+            // Get Ele
             SPtr<MultiBandMap2DCPUEle> ele = d->data()[x + y * d->w()];
+
+            // Check if Ele exists
             if (!ele.get()) {
                 continue;
             }
 
             {
                 pi::ReadMutex lock(ele->mutexData);
+
+                // Check if Ele contains Laplace pyramids
                 if (!ele->pyr_laplace.size()) {
                     continue;
                 }
+
+                // Set dimensions for an Ele patch
                 int width = ELE_PIXELS, height = ELE_PIXELS;
 
+                // Execute for the number of bands
                 for (int i = 0; i <= _bandNum; ++i) {
+                    // Create rectangle for the Ele, with Top Left Corner coordinates
                     cv::Rect rect(width * (x - minInt.x), height * (y - minInt.y), width, height);
+
+                    // If Laplace pyramid is empty, initialize it with zeros
                     if (pyr_laplace[i].empty()) {
                         pyr_laplace[i] = cv::Mat::zeros(wh.y * height, wh.x * width, ele->pyr_laplace[i].type());
                     }
+
+                    // Copy matrix to global pyr_laplace in the rect submatrix
                     ele->pyr_laplace[i].copyTo(pyr_laplace[i](rect));
+
+                    // Copy weights on first band pass in the global pyr_weights
                     if (i == 0) {
                         // ele->weights[i].copyTo(pyr_weights[i](rect));
                         ele->weights[i].copyTo(pyr_weights(rect));
                     }
+
+                    // Halve the size
                     height >>= 1;
                     width >>= 1;
                 }
             }
         }
     }
-
+    
+    // Restore image from Laplace pyramids
     cv::detail::restoreImageFromLaplacePyr(pyr_laplace);
 
+    // Check data type and convert to rgb image
     cv::Mat result = pyr_laplace[0];
     if (result.type() == CV_16SC3) {
         result.convertTo(result, CV_8UC3);
     }
+
+    // Set pixels where there are not weights defined to BackGroundColor
     // result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
     result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights == 0);
+
+    // Save file
     cv::imwrite(filename, result);
     cout << "Resolution:[" << result.cols << " " << result.rows << "]";
     if (svar.exist("GPS.Origin")) {
         cout << ",_lengthPixel:" << d->lengthPixel() << ",Area:" << contentCount * d->eleSize() * d->eleSize() << endl;
     }
+
     return true;
 }
