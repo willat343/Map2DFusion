@@ -619,7 +619,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     pi::timer.enter("MultiBandMap2DCPU::Apply");
     // Iterate over all cells in the maximal rectangular region where image projects onto the plane
     std::vector<SPtr<MultiBandMap2DCPUEle>> dataCopy = d->data();
-    for (int x = xminInt; x < xmaxInt; x++)
+    for (int x = xminInt; x < xmaxInt; x++) {
         for (int y = yminInt; y < ymaxInt; y++) {
             // Get the cell/element patch
             SPtr<MultiBandMap2DCPUEle> ele = dataCopy[y * d->w() + x];
@@ -706,6 +706,7 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
             // Set a flag that the element has changed
             ele->Ischanged = true;
         }
+    }
     pi::timer.leave("MultiBandMap2DCPU::Apply");
 
     return true;
