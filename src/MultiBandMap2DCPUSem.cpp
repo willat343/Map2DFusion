@@ -690,7 +690,7 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         float *dstW = (float *)ele->weights[i].data;
                         pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
 
-                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip)
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
                                 if (*srcW >= *dstW) {
@@ -702,6 +702,7 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                                     }
                                 }
                             }
+                        }
                     }
                 }
                 // Halve size at each level
