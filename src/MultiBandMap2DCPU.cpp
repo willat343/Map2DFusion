@@ -1039,7 +1039,7 @@ void MultiBandMap2DCPU::draw() {
  * @return true Successful
  * @return false No Eles in the MultiBandMap2DCPUData
  */
-bool MultiBandMap2DCPU::save(const std::string &filename) {
+bool MultiBandMap2DCPU::save(const std::string &filename, const std::string &semFilename) {
     //// determin minmax
     // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
     // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.

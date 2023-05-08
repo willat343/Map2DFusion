@@ -51,7 +51,7 @@ public:
         
         // If map exists save the output to result.png
         if (map.get()) {
-            map->save(svar.GetString("Map.File2Save", "result.png")); 
+            map->save(svar.GetString("Map.File2Save", "result.png"), svar.GetString("Map.File2SaveSem", "sem.png")); 
         }
         
         // Destruct map and main window

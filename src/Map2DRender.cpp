@@ -888,6 +888,6 @@ void Map2DRender::draw() {
     glPopMatrix();
 }
 
-bool Map2DRender::save(const std::string& filename) {
+bool Map2DRender::save(const std::string &filename, const std::string &semFilename) {
     return false;
 }

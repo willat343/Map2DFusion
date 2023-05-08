@@ -500,7 +500,7 @@ void Map2DCPU::draw() {
     glPopMatrix();
 }
 
-bool Map2DCPU::save(const std::string& filename) {
+bool Map2DCPU::save(const std::string &filename, const std::string &semFilename) {
     // determin minmax
     SPtr<Map2DCPUPrepare> p;
     SPtr<Map2DCPUData> d;

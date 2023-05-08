@@ -1035,7 +1035,7 @@ void MultiBandMap2DCPUSem::draw() {
  * @return true Successful
  * @return false No Eles in the MultiBandMap2DCPUSemData
  */
-bool MultiBandMap2DCPUSem::save(const std::string &filename) {
+bool MultiBandMap2DCPUSem::save(const std::string &filename, const std::string &semFilename) {
     //// determin minmax
     // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
     // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.
@@ -1087,6 +1087,8 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename) {
     // vector<cv::Mat> pyr_weights(_bandNum + 1);
     // for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
     cv::Mat pyr_weights = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
+    
+    cv::Mat sem = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_8UC3);
 
     // Iterate through each Ele
     for (int x = minInt.x; x < maxInt.x; x++) {
@@ -1127,6 +1129,7 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename) {
                     if (i == 0) {
                         // ele->weights[i].copyTo(pyr_weights[i](rect));
                         ele->weights[i].copyTo(pyr_weights(rect));
+                        ele->sem.copyTo(sem(rect));
                     }
 
                     // Halve the size
@@ -1150,8 +1153,12 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename) {
     // result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights[0] == 0);
     result.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights == 0);
 
+    // TODO Set to unlabeled value
+    sem.setTo(cv::Scalar::all(svar.GetInt("Result.BackGroundColor")), pyr_weights == 0);
+
     // Save file
     cv::imwrite(filename, result);
+    cv::imwrite(semFilename, sem);
     cout << "Resolution:[" << result.cols << " " << result.rows << "]";
     if (svar.exist("GPS.Origin")) {
         cout << ",_lengthPixel:" << d->lengthPixel() << ",Area:" << contentCount * d->eleSize() * d->eleSize() << endl;

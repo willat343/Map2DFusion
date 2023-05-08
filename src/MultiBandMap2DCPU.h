@@ -139,7 +139,7 @@ public:
 
     virtual void draw();
 
-    virtual bool save(const std::string &filename);
+    virtual bool save(const std::string &filename, const std::string &semFilename);
 
     virtual uint queueSize() {
         if (prepared.get())

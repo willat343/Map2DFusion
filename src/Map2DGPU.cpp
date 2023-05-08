@@ -616,7 +616,7 @@ void Map2DGPU::draw() {
     glPopMatrix();
 }
 
-bool Map2DGPU::save(const std::string& filename) {
+bool Map2DGPU::save(const std::string &filename, const std::string &semFilename) {
     // determin minmax
     SPtr<Map2DGPUPrepare> p;
     SPtr<Map2DGPUData> d;
