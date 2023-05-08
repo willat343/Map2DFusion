@@ -8,7 +8,7 @@ class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
     typedef Map2DPrepare MultiBandMap2DCPUSemPrepare;
 
     struct MultiBandMap2DCPUSemEle {
-        // Constructor and destructor 
+        // Constructor and destructor
         // Constructor: initializes structure variable with 0 texture and Ischanged set to false
         MultiBandMap2DCPUSemEle()
             : texName(0),
@@ -18,10 +18,10 @@ class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
         static bool normalizeUsingWeightMap(const cv::Mat &weight, cv::Mat &src);
         static bool mulWeightMap(const cv::Mat &weight, cv::Mat &src);
 
-        cv::Mat blend(
-                const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors = std::vector<SPtr<MultiBandMap2DCPUSemEle>>());
-        bool updateTexture(
-                const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors = std::vector<SPtr<MultiBandMap2DCPUSemEle>>());
+        cv::Mat blend(const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors =
+                              std::vector<SPtr<MultiBandMap2DCPUSemEle>>());
+        bool updateTexture(const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors =
+                                   std::vector<SPtr<MultiBandMap2DCPUSemEle>>());
 
         std::vector<cv::Mat> pyr_laplace;
         std::vector<cv::Mat> weights;
@@ -37,8 +37,8 @@ class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
         MultiBandMap2DCPUSemData()
             : _w(0),
               _h(0) {}
-        MultiBandMap2DCPUSemData(double eleSize_, double lengthPixel_, pi::Point3d max_, pi::Point3d min_, int w_, int h_,
-                const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &d_);
+        MultiBandMap2DCPUSemData(double eleSize_, double lengthPixel_, pi::Point3d max_, pi::Point3d min_, int w_,
+                int h_, const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &d_);
 
         bool prepare(SPtr<MultiBandMap2DCPUSemPrepare> prepared);  // only done Once!
 
@@ -111,8 +111,7 @@ public:
         _valid = false;
     }
 
-    virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames);
+    virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera, const std::deque<CameraFrame> &frames);
 
     virtual bool feed(cv::Mat img, const pi::SE3d &pose);  // world coordinate
 
@@ -130,8 +129,8 @@ public:
     virtual void run();
 
 private:
-    bool getFrame(std::pair<cv::Mat, pi::SE3d> &frame);
-    bool renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame);
+    bool getFrame(CameraFrame &frame);
+    bool renderFrame(const CameraFrame &frame);
     bool spreadMap(double xmin, double ymin, double xmax, double ymax);
 
     // source
