@@ -385,7 +385,7 @@ bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &
  * @return true Insertion was successful or rendering was successful (threading)
  * @return false MultiBandMap2DCPU was not prepared
  */
-bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
+bool MultiBandMap2DCPU::feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose) {
     // Check if MultiBandMap2DCPU was prepared
     if (!_valid) {
         return false;  // MultiBandMap2DCPU was not prepared
@@ -401,7 +401,7 @@ bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
     }
 
     // Create frame pair while converting the pose
-    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
+    CameraFrame frame = {img, sem, p->_plane.inverse() * pose};
 
     // If threding is enabled
     if (_thread) {

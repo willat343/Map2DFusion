@@ -409,7 +409,7 @@ bool Map2DRender::prepare(const pi::SE3d& plane, const PinHoleParameters& camera
     return false;
 }
 
-bool Map2DRender::feed(cv::Mat img, const pi::SE3d& pose) {
+bool Map2DRender::feed(cv::Mat img, cv::Mat sem, const pi::SE3d& pose) {
     if (!_valid)
         return false;
     SPtr<Map2DRenderPrepare> p;
@@ -419,7 +419,7 @@ bool Map2DRender::feed(cv::Mat img, const pi::SE3d& pose) {
         p = prepared;
         d = data;
     }
-    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
+    CameraFrame frame = {img, sem, p->_plane.inverse() * pose};
     if (_thread) {
         pi::WriteMutex lock(p->mutexFrames);
         p->_frames.push_back(frame);

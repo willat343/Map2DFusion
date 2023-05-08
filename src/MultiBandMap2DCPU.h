@@ -135,7 +135,7 @@ public:
     virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
             const std::deque<CameraFrame> &frames);
 
-    virtual bool feed(cv::Mat img, const pi::SE3d &pose);  // world coordinate
+    virtual bool feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose);  // world coordinate
 
     virtual void draw();
 

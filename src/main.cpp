@@ -76,7 +76,7 @@ public:
                 // Get new frame
                 if (obtainFrame(frame)) {
                     pi::timer.enter("Map2D::feed"); // Start timer
-                    map->feed(frame.image, frame.pose); // Feed the new frame to the map
+                    map->feed(frame.image, frame.sem, frame.pose); // Feed the new frame to the map
 
                     // Update main window
                     if (mainwindow.get() && tictac.Tac() > 0.033) {
@@ -153,7 +153,7 @@ public:
         }
         
         ifs >> frame.pose; // Read poses for the previously read frame, the second element of frame contains the pose
-        
+
         // Feed translation from pose to length calculator if the GPS origin coordinates are set
         if (svar.exist("GPS.Origin")) {
             if (!lengthCalculator.get()) {
@@ -271,7 +271,7 @@ public:
                     if (!obtainFrame(frame)) {
                         break;
                     }
-                    map->feed(frame.image, frame.pose); // Feed new frame to the map
+                    map->feed(frame.image, frame.sem, frame.pose); // Feed new frame to the map
                 }
 
                 // Update main window

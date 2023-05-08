@@ -100,7 +100,7 @@ public:
         return false;
     }
 
-    virtual bool feed(cv::Mat img, const pi::SE3d &pose) {
+    virtual bool feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose) {
         return false;
     }
 
