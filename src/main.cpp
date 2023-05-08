@@ -8,6 +8,7 @@
 
 #include "MainWindow.h"
 #include "Map2D.h"
+#include "MultiBandMap2DCPUSem.h"
 
 using namespace std;
 
@@ -44,16 +45,15 @@ public:
     }
 
     ~TestSystem() {
-        stop(); // Stop pipeline execution
+        stop();  // Stop pipeline execution
 
-        while (this->isRunning()) 
-            sleep(10); // Wait for the piepline to stop
-        
+        while (this->isRunning()) sleep(10);  // Wait for the piepline to stop
+
         // If map exists save the output to result.png
         if (map.get()) {
-            map->save(svar.GetString("Map.File2Save", "result.png"), svar.GetString("Map.File2SaveSem", "sem.png")); 
+            map->save(svar.GetString("Map.File2Save", "result.png"), svar.GetString("Map.File2SaveSem", "sem.png"));
         }
-        
+
         // Destruct map and main window
         map = SPtr<Map2D>();
         mainwindow = SPtr<MainWindow>();
@@ -65,7 +65,7 @@ public:
      *          Key "P": Pause execution
      *          Key "Esc": Stop Execution
      * @param arg QT Key Event
-     * @return false 
+     * @return false
      */
     virtual bool KeyPressHandle(void *arg) {
         QKeyEvent *e = (QKeyEvent *)arg;
@@ -75,8 +75,8 @@ public:
                 CameraFrame frame;
                 // Get new frame
                 if (obtainFrame(frame)) {
-                    pi::timer.enter("Map2D::feed"); // Start timer
-                    map->feed(frame.image, frame.sem, frame.pose); // Feed the new frame to the map
+                    pi::timer.enter("Map2D::feed");                 // Start timer
+                    map->feed(frame.image, frame.sem, frame.pose);  // Feed the new frame to the map
 
                     // Update main window
                     if (mainwindow.get() && tictac.Tac() > 0.033) {
@@ -84,7 +84,7 @@ public:
                         mainwindow->update();
                     }
 
-                    pi::timer.leave("Map2D::feed"); // End timer
+                    pi::timer.leave("Map2D::feed");  // End timer
                 }
             } break;
             // Pause Execution
@@ -104,7 +104,7 @@ public:
 
     /**
      * @brief Takes one input image at a time and uses the event listener to get user input
-     * 
+     *
      * @return int Error code
      */
     int TestMap2DItem() {
@@ -126,8 +126,8 @@ public:
     }
 
     /**
-     * @brief 
-     * 
+     * @brief
+     *
      * @param frame  Frame passed as reference (contains image and corresponding pose)
      * @return true  If the execution completed successfully
      * @return false If the image did not load correcly
@@ -135,41 +135,40 @@ public:
     bool obtainFrame(CameraFrame &frame) {
         // Read timestamp from line (timestamp is the name of the image)
         string line;
-        if (!getline(*in, line)) { // getline reads the next line that hasn't been read yet and *in points to the trajectory file
+        if (!getline(*in, line)) {  // getline reads the next line that hasn't been read yet and *in points to the
+                                    // trajectory file
             return false;
         }
         stringstream ifs(line);
         string imgFileName;
         string semFileName;
 
-        ifs >> imgFileName; // Reads until the first space in trajectory.txt, which is the timestamp
-        semFileName = datapath + "/sem/" + imgFileName + ".jpg";
-        imgFileName = datapath + "/rgb/" + imgFileName + ".jpg"; // Get image file path (the image files are names by timestamps)
+        ifs >> imgFileName;  // Reads until the first space in trajectory.txt, which is the timestamp
+        semFileName = datapath + "/sem/" + imgFileName + ".png";
+        // Get image file path (the image files are names by timestamps)
+        imgFileName = datapath + "/rgb/" + imgFileName + ".jpg";
 
-        pi::timer.enter("obtainFrame"); // Start image read timer
-        frame.image = cv::imread(imgFileName); // Read image, frame.first corresponds to the first element of the pair
-        pi::timer.leave("obtainFrame"); // End image read timer
+        pi::timer.enter("obtainFrame");         // Start image read timer
+        frame.image = cv::imread(imgFileName);  // Read image, frame.first corresponds to the first element of the pair
+        pi::timer.leave("obtainFrame");         // End image read timer
 
         // Image could not be read
         if (frame.image.empty()) {
             return false;
         }
-        
-        ifs >> frame.pose; // Read poses for the previously read frame, the second element of frame contains the pose
 
-        if(svar.exist("Map2D.SemEnable")) {
-            int semEnable = svar.GetInt("Map2D.SemEnable", 0);
+        ifs >> frame.pose;  // Read poses for the previously read frame, the second element of frame contains the pose
 
-            if (semEnable) {
-                pi::timer.enter("obtainFrame"); // Start image read timer
-                frame.sem = cv::imread(semFileName); // Read image, frame.first corresponds to the first element of the pair
-                pi::timer.leave("obtainFrame"); // End image read timer
+        if (svar.GetInt("Map2D.Type", 0) == 5) {
+            pi::timer.enter("obtainFrame");  // Start image read timer
+            frame.sem =
+                    cv::imread(semFileName);  // Read image, frame.first corresponds to the first element of the pair
+            pi::timer.leave("obtainFrame");   // End image read timer
 
-                if (frame.sem.empty()) {
-                    std::cerr << semFileName << "\n";
-                    std::cerr << "Could not read semantic segmented image!\n";
-                    return false;
-                }
+            if (frame.sem.empty()) {
+                std::cerr << semFileName << "\n";
+                std::cerr << "Could not read semantic segmented image!\n";
+                return false;
             }
         }
 
@@ -178,7 +177,8 @@ public:
             if (!lengthCalculator.get()) {
                 lengthCalculator = SPtr<TrajectoryLengthCalculator>(new TrajectoryLengthCalculator());
             }
-            lengthCalculator->feed(frame.pose.get_translation()); // keeps track of trajectory to print total trajectory at the end
+            lengthCalculator->feed(
+                    frame.pose.get_translation());  // keeps track of trajectory to print total trajectory at the end
         }
 
         return true;
@@ -186,7 +186,7 @@ public:
 
     /**
      * @brief Runs the main Map2D fusion pipeline on the given dataset
-     * 
+     *
      * @return int Error code
      *              "-1": Data path is not set
      *              "-2": Plane is not defined
@@ -212,6 +212,25 @@ public:
             return -2;
         }
 
+        std::vector<SemLabel> labels;
+        if (svar.GetInt("Map2D.Type", 0) == 5) {
+            std::string labels_datapath = svar.GetString("Map2D.SemLabels", datapath + "/labels.txt");
+            cerr << "Reading labels from " << labels_datapath << ":\n";
+            std::ifstream labels_file(labels_datapath);
+            SemLabel label;
+            int r, g, b;
+            while (labels_file >> label.name >> r >> g >> b >> label.priority) {
+                label.colour[0] = static_cast<unsigned char>(b);
+                label.colour[1] = static_cast<unsigned char>(g);
+                label.colour[2] = static_cast<unsigned char>(r);
+                cerr << label.name << ": (rgb: [" << r << " " << g << " " << b << "] priority: " << label.priority
+                     << ")\n";
+                labels.push_back(label);
+            }
+            labels_file.close();
+            cerr << "Finished reading labels.\n";
+        }
+
         // Open trajectory.txt file that contains the poses (Used in obtainFrame)
         if (!in.get()) {
             in = SPtr<ifstream>(new ifstream((datapath + "/trajectory.txt").c_str()));
@@ -221,15 +240,15 @@ public:
             return -3;
         }
 
-        deque<CameraFrame> frames; // Deque containin frames (frame = pair<Image, Pose>)
+        deque<CameraFrame> frames;  // Deque containin frames (frame = pair<Image, Pose>)
 
         // Preaload the queue with #PrepareFrameNum of frames (Default: 10)
         for (int i = 0, iend = svar.GetInt("PrepareFrameNum", 10); i < iend; i++) {
             CameraFrame frame;
-            if (!obtainFrame(frame)) { // Obtain frame
-                break; // Break if failed to read frame
+            if (!obtainFrame(frame)) {  // Obtain frame
+                break;                  // Break if failed to read frame
             }
-            frames.push_back(frame); // Push frame to queue
+            frames.push_back(frame);  // Push frame to queue
         }
         cout << "Loaded " << frames.size() << " frames.\n";
 
@@ -246,6 +265,10 @@ public:
             return -5;
         }
 
+        if (svar.GetInt("Map2D.Type", 0) == 5) {
+            dynamic_cast<MultiBandMap2DCPUSem *>(map.get())->setSemanticLabels(labels);
+        }
+
         // Read camera intrinsics
         VecParament vecP = svar.get_var("Camera.Paraments", VecParament());
         if (vecP.size() != 6) {
@@ -253,7 +276,7 @@ public:
             return -6;
         }
 
-        // Prepare (Setup) the map 
+        // Prepare (Setup) the map
         map->prepare(svar.get_var<pi::SE3d>("Plane", pi::SE3d()),
                 PinHoleParameters(vecP[0], vecP[1], vecP[2], vecP[3], vecP[4], vecP[5]), frames);
 
@@ -275,22 +298,22 @@ public:
         }
 
         /**
-        * If AutoFeedFrames is True (Default: True)
-        * Read frames and feed them to the map
-        */
+         * If AutoFeedFrames is True (Default: True)
+         * Read frames and feed them to the map
+         */
         if (svar.GetInt("AutoFeedFrames", 1)) {
-            pi::Rate rate(svar.GetInt("Video.fps", 100)); // Frame feed rate
+            pi::Rate rate(svar.GetInt("Video.fps", 100));  // Frame feed rate
 
             while (!shouldStop()) {
                 // Only feed poses if the queue size is smaller than 2
                 if (map->queueSize() < 2) {
                     CameraFrame frame;
 
-                    //Obtain new frame
+                    // Obtain new frame
                     if (!obtainFrame(frame)) {
                         break;
                     }
-                    map->feed(frame.image, frame.sem, frame.pose); // Feed new frame to the map
+                    map->feed(frame.image, frame.sem, frame.pose);  // Feed new frame to the map
                 }
 
                 // Update main window
@@ -299,50 +322,48 @@ public:
                     mainwindow->getWin3D()->update();
                 }
 
-                rate.sleep(); // Sleep based on the given image feed rate
+                rate.sleep();  // Sleep based on the given image feed rate
             }
         }
     }
 
     /**
-     * @brief Run function that is either executed as a separate thread 
+     * @brief Run function that is either executed as a separate thread
      *         or by the main thread
-     * 
+     *
      */
     virtual void run() {
-        string act = svar.GetString("Act", "Default"); // Determine execution type
+        string act = svar.GetString("Act", "Default");  // Determine execution type
 
         if (act == "TestMap2DItem") {
             TestMap2DItem();
-        }
-        else if (act == "TestMap2D" || act == "Default") {
-            testMap2D(); // Execute the incremental Map2DFustion pipeline
-        }
-        else {
+        } else if (act == "TestMap2D" || act == "Default") {
+            testMap2D();  // Execute the incremental Map2DFustion pipeline
+        } else {
             cout << "No act " << act << "!\n";
         }
     }
 
-    string datapath; // Path to the dataset
-    pi::TicTac tictac; // Timer for the update of the main window
-    SPtr<MainWindow> mainwindow; // Main QT window
-    SPtr<ifstream> in; // Input file stream for image file names and poses
-    SPtr<Map2D> map; // Map2D map
-    SPtr<TrajectoryLengthCalculator> lengthCalculator; // GPS tranjectory length calculator
+    string datapath;                                    // Path to the dataset
+    pi::TicTac tictac;                                  // Timer for the update of the main window
+    SPtr<MainWindow> mainwindow;                        // Main QT window
+    SPtr<ifstream> in;                                  // Input file stream for image file names and poses
+    SPtr<Map2D> map;                                    // Map2D map
+    SPtr<TrajectoryLengthCalculator> lengthCalculator;  // GPS tranjectory length calculator
 };
 
 int main(int argc, char **argv) {
-    svar.ParseMain(argc, argv); // Parse config file given as parameter or "Default.cfg"
+    svar.ParseMain(argc, argv);  // Parse config file given as parameter or "Default.cfg"
 
     // Check if the code should run with QT Application GUI
     if (svar.GetInt("Win3D.Enable", 0)) {
-        QApplication app(argc, argv); // Create QT Application Window
-        TestSystem sys; // Create the Map2DFusion pipeline
-        sys.start(); // Run the Map2DFusion pipeline as a thread
-        return app.exec(); // Run the QT Application
+        QApplication app(argc, argv);  // Create QT Application Window
+        TestSystem sys;                // Create the Map2DFusion pipeline
+        sys.start();                   // Run the Map2DFusion pipeline as a thread
+        return app.exec();             // Run the QT Application
     } else {
-        TestSystem sys; // Create the Map2DFusion pipeline
-        sys.run(); // Run the Map2DFusion pipeline as a thread
+        TestSystem sys;  // Create the Map2DFusion pipeline
+        sys.run();       // Run the Map2DFusion pipeline as a thread
     }
     return 0;
 }

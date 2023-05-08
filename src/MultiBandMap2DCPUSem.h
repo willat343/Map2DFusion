@@ -1,8 +1,16 @@
 #ifndef MultiBandMap2DCPUSEM_H
 #define MultiBandMap2DCPUSEM_H
 #include <base/system/thread/ThreadBase.h>
+#include <unordered_map>
+#include <cstdint>
 
 #include "Map2D.h"
+
+struct SemLabel {
+    std::string name;
+    pi::Point3ub colour;
+    int priority;
+};
 
 class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
     typedef Map2DPrepare MultiBandMap2DCPUSemPrepare;
@@ -113,11 +121,18 @@ public:
 
     virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera, const std::deque<CameraFrame> &frames);
 
-    virtual bool feed(cv::Mat img, const pi::SE3d &pose);  // world coordinate
+    virtual bool feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose);  // world coordinate
 
     virtual void draw();
 
     virtual bool save(const std::string &filename, const std::string &semFilename);
+
+    inline void setSemanticLabels(const std::vector<SemLabel> &labels_) {
+        labels = labels_;
+        for (const auto& label : labels) {
+            pixelid_to_label.emplace(pixelid(label.colour), label);
+        }
+    }
 
     virtual uint queueSize() {
         if (prepared.get())
@@ -133,6 +148,15 @@ private:
     bool renderFrame(const CameraFrame &frame);
     bool spreadMap(double xmin, double ymin, double xmax, double ymax);
 
+    std::uint32_t pixelid(const pi::Point3ub& pixel) {
+        std::uint32_t id{0};
+        for (int i = 0; i < 3; ++i) {
+            id = id << 8;
+            id |= static_cast<std::uint32_t>(pixel[i]);
+        }
+        return id;
+    }
+
     // source
     SPtr<MultiBandMap2DCPUSemPrepare> prepared;
     SPtr<MultiBandMap2DCPUSemData> data;
@@ -141,6 +165,8 @@ private:
     bool _valid, _thread, _changed;
     cv::Mat weightImage;
     int &alpha, _bandNum, &_highQualityShow;
+    std::vector<SemLabel> labels;
+    std::unordered_map<std::uint32_t, SemLabel> pixelid_to_label;
 };
 
 #endif

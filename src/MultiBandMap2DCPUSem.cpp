@@ -364,7 +364,7 @@ bool MultiBandMap2DCPUSem::prepare(const pi::SE3d &plane, const PinHoleParameter
  * @return true Insertion was successful or rendering was successful (threading)
  * @return false MultiBandMap2DCPUSem was not prepared
  */
-bool MultiBandMap2DCPUSem::feed(cv::Mat img, const pi::SE3d &pose) {
+bool MultiBandMap2DCPUSem::feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose) {
     // Check if MultiBandMap2DCPUSem was prepared
     if (!_valid) {
         return false;  // MultiBandMap2DCPUSem was not prepared
@@ -380,7 +380,7 @@ bool MultiBandMap2DCPUSem::feed(cv::Mat img, const pi::SE3d &pose) {
     }
 
     // Create frame pair while converting the pose
-    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
+    CameraFrame frame = {img, sem, p->_plane.inverse() * pose};
 
     // If threding is enabled
     if (_thread) {
@@ -417,7 +417,6 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                 "frame.image.cols!=p->_camera.w||frame.image.rows!=p->_camera.h||frame.image.type()!=CV_8UC3\n";
         return false;
     }
-
     if (frame.sem.type() != CV_8UC3) {
         cerr << "Semantic segmentation image is not CV_8UC3\n";
         return false;
@@ -579,7 +578,6 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
     // Display/save the warped images if configured to, waiting until key is pressed.
     if (svar.GetInt("ShowWarped", 0)) {
-        std::cerr << "showing warp image\n";
         cv::imshow("image_warped", image_warped);
         cv::imshow("weight_warped", weight_warped);
         cv::imshow("sem_warped", sem_warped);
@@ -622,11 +620,6 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                 ele->weights.resize(_bandNum + 1);
             }
 
-            // srcSem = pointer to a pixel in the element's semantic image
-            pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data;
-            // dstSem = pointer to a pixel in the element's semantic image
-            pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
-
             // Iterate over the Laplacian pyramid levels. Start with width/height equal to the patch size (256x256) and
             // halve this size at each level
             int width = ELE_PIXELS, height = ELE_PIXELS;
@@ -639,6 +632,9 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                     // laplacian pyramid and weights
                     pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
                     pyr_weights[i](rect).copyTo(ele->weights[i]);
+                    if (i == 0) {
+                        sem_warped(rect).copyTo(ele->sem);
+                    }
                 } else {
                     //// Case 2: Element is not new and blending is required
 
@@ -654,11 +650,15 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         pi::Point3f *srcL = ((pi::Point3f *)pyr_laplace[i].data) + org;
                         // srcW = pointer to a pixel in the current weights image, starting at element origin
                         float *srcW = ((float *)pyr_weights[i].data) + org;
+                        // srcSem = pointer to a pixel in the element's semantic image
+                        pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data + org;
 
                         // dstL = pointer to a pixel in the element's current laplacian pyramid image
                         pi::Point3f *dstL = (pi::Point3f *)ele->pyr_laplace[i].data;
                         // dstW = pointer to a pixel in the element's current weights image
                         float *dstW = (float *)ele->weights[i].data;
+                        // dstSem = pointer to a pixel in the element's semantic image
+                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
 
                         // Iterate over every pixel in the patch (size depends on level, (256/2^i, 256/2^i))
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
@@ -669,7 +669,8 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                                 if (*srcW >= *dstW) {
                                     *dstL = *srcL;
                                     *dstW = *srcW;
-                                    if (i == 0) {
+                                    if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
+                                                          pixelid_to_label.at(pixelid(*dstSem)).priority) {
                                         *dstSem = *srcSem;
                                     }
                                 }
@@ -683,17 +684,20 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
                         pi::Point3_<short> *srcL = ((pi::Point3_<short> *)pyr_laplace[i].data) + org;
                         float *srcW = ((float *)pyr_weights[i].data) + org;
+                        pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data + org;
 
                         pi::Point3_<short> *dstL = (pi::Point3_<short> *)ele->pyr_laplace[i].data;
                         float *dstW = (float *)ele->weights[i].data;
+                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
 
-                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip)
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
                                 if (*srcW >= *dstW) {
                                     *dstL = *srcL;
                                     *dstW = *srcW;
-                                    if (i == 0) {
+                                    if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
+                                                          pixelid_to_label.at(pixelid(*dstSem)).priority) {
                                         *dstSem = *srcSem;
                                     }
                                 }
@@ -1092,7 +1096,7 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename, const std::string &
     // vector<cv::Mat> pyr_weights(_bandNum + 1);
     // for (int i = 0; i <= 0; i++) pyr_weights[i] = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
     cv::Mat pyr_weights = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_32FC1);
-    
+
     cv::Mat sem = cv::Mat::zeros(wh.y * ELE_PIXELS, wh.x * ELE_PIXELS, CV_8UC3);
 
     // Iterate through each Ele
