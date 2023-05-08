@@ -89,7 +89,8 @@ public:
         TypeCPU = 1,
         TypeGPU = 2,
         TypeMultiBandCPU = 3,
-        TypeRender = 4
+        TypeRender = 4,
+        TypeMultibandCPUSem = 5
     };
     static SPtr<Map2D> create(int type = TypeCPU, bool thread = true);
 

@@ -28,6 +28,7 @@
 #include "Map2DGPU.h"
 #include "Map2DRender.h"
 #include "MultiBandMap2DCPU.h"
+#include "MultiBandMap2DCPUSem.h"
 
 using namespace std;
 
@@ -58,6 +59,8 @@ SPtr<Map2D> Map2D::create(int type, bool thread) {
         return SPtr<MultiBandMap2DCPU>(new MultiBandMap2DCPU(thread));
     else if (type == TypeRender)
         return SPtr<Map2D>(new Map2DRender(thread));
+    else if (type == TypeMultibandCPUSem)
+        return SPtr<MultiBandMap2DCPUSem>(new MultiBandMap2DCPUSem(thread));
     else if (type == TypeGPU) {
 #ifdef HAS_CUDA
         return SPtr<Map2D>(new Map2DGPU(thread));
