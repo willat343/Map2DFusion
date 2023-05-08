@@ -140,7 +140,10 @@ public:
         }
         stringstream ifs(line);
         string imgFileName;
+        string semFileName;
+
         ifs >> imgFileName; // Reads until the first space in trajectory.txt, which is the timestamp
+        semFileName = datapath + "/sem/" + imgFileName + ".jpg";
         imgFileName = datapath + "/rgb/" + imgFileName + ".jpg"; // Get image file path (the image files are names by timestamps)
 
         pi::timer.enter("obtainFrame"); // Start image read timer
@@ -153,6 +156,22 @@ public:
         }
         
         ifs >> frame.pose; // Read poses for the previously read frame, the second element of frame contains the pose
+
+        if(svar.exist("Map2D.SemEnable")) {
+            int semEnable = svar.GetInt("Map2D.SemEnable", 0);
+
+            if (semEnable) {
+                pi::timer.enter("obtainFrame"); // Start image read timer
+                frame.sem = cv::imread(semFileName); // Read image, frame.first corresponds to the first element of the pair
+                pi::timer.leave("obtainFrame"); // End image read timer
+
+                if (frame.sem.empty()) {
+                    std::cerr << semFileName << "\n";
+                    std::cerr << "Could not read semantic segmented image!\n";
+                    return false;
+                }
+            }
+        }
 
         // Feed translation from pose to length calculator if the GPS origin coordinates are set
         if (svar.exist("GPS.Origin")) {
