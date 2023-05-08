@@ -418,6 +418,11 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
         return false;
     }
 
+    if (frame.sem.type() != CV_8UC3) {
+        cerr << "Semantic segmentation image is not CV_8UC3\n";
+        return false;
+    }
+
     //// 1. Compute the 3D coordinates of the image corners on the plane, and save the x and y coordinates.
     // Set imgPts to be the 4 corners of the image in pixel coordinates
     std::vector<pi::Point2d> imgPts;
