@@ -72,11 +72,11 @@ public:
         switch (e->key()) {
             // Feed new frame to the map
             case Qt::Key_I: {
-                std::pair<cv::Mat, pi::SE3d> frame;
+                CameraFrame frame;
                 // Get new frame
                 if (obtainFrame(frame)) {
                     pi::timer.enter("Map2D::feed"); // Start timer
-                    map->feed(frame.first, frame.second); // Feed the new frame to the map
+                    map->feed(frame.image, frame.pose); // Feed the new frame to the map
 
                     // Update main window
                     if (mainwindow.get() && tictac.Tac() > 0.033) {
@@ -132,7 +132,7 @@ public:
      * @return true  If the execution completed successfully
      * @return false If the image did not load correcly
      */
-    bool obtainFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
+    bool obtainFrame(CameraFrame &frame) {
         // Read timestamp from line (timestamp is the name of the image)
         string line;
         if (!getline(*in, line)) { // getline reads the next line that hasn't been read yet and *in points to the trajectory file
@@ -144,22 +144,22 @@ public:
         imgFileName = datapath + "/rgb/" + imgFileName + ".jpg"; // Get image file path (the image files are names by timestamps)
 
         pi::timer.enter("obtainFrame"); // Start image read timer
-        frame.first = cv::imread(imgFileName); // Read image, frame.first corresponds to the first element of the pair
+        frame.image = cv::imread(imgFileName); // Read image, frame.first corresponds to the first element of the pair
         pi::timer.leave("obtainFrame"); // End image read timer
 
         // Image could not be read
-        if (frame.first.empty()) {
+        if (frame.image.empty()) {
             return false;
         }
         
-        ifs >> frame.second; // Read poses for the previously read frame, the second element of frame contains the pose
-
+        ifs >> frame.pose; // Read poses for the previously read frame, the second element of frame contains the pose
+        
         // Feed translation from pose to length calculator if the GPS origin coordinates are set
         if (svar.exist("GPS.Origin")) {
             if (!lengthCalculator.get()) {
                 lengthCalculator = SPtr<TrajectoryLengthCalculator>(new TrajectoryLengthCalculator());
             }
-            lengthCalculator->feed(frame.second.get_translation()); // keeps track of trajectory to print total trajectory at the end
+            lengthCalculator->feed(frame.pose.get_translation()); // keeps track of trajectory to print total trajectory at the end
         }
 
         return true;
@@ -202,11 +202,11 @@ public:
             return -3;
         }
 
-        deque<std::pair<cv::Mat, pi::SE3d>> frames; // Deque containin frames (frame = pair<Image, Pose>)
+        deque<CameraFrame> frames; // Deque containin frames (frame = pair<Image, Pose>)
 
         // Preaload the queue with #PrepareFrameNum of frames (Default: 10)
         for (int i = 0, iend = svar.GetInt("PrepareFrameNum", 10); i < iend; i++) {
-            std::pair<cv::Mat, pi::SE3d> frame;
+            CameraFrame frame;
             if (!obtainFrame(frame)) { // Obtain frame
                 break; // Break if failed to read frame
             }
@@ -265,13 +265,13 @@ public:
             while (!shouldStop()) {
                 // Only feed poses if the queue size is smaller than 2
                 if (map->queueSize() < 2) {
-                    std::pair<cv::Mat, pi::SE3d> frame;
+                    CameraFrame frame;
 
                     //Obtain new frame
                     if (!obtainFrame(frame)) {
                         break;
                     }
-                    map->feed(frame.first, frame.second); // Feed new frame to the map
+                    map->feed(frame.image, frame.pose); // Feed new frame to the map
                 }
 
                 // Update main window

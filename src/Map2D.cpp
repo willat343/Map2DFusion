@@ -32,7 +32,7 @@
 using namespace std;
 
 bool Map2DPrepare::prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames) {
+        const std::deque<CameraFrame> &frames) {
     if (frames.size() == 0 || camera.w <= 0 || camera.h <= 0 || camera.fx == 0 || camera.fy == 0) {
         cerr << "Map2D::prepare:Not valid prepare!\n";
         return false;
@@ -42,8 +42,8 @@ bool Map2DPrepare::prepare(const pi::SE3d &plane, const PinHoleParameters &camer
     _fyinv = 1. / camera.fy;
     _plane = plane;
     _frames = frames;
-    for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = _frames.begin(); it != _frames.end(); it++) {
-        pi::SE3d &pose = it->second;
+    for (std::deque<CameraFrame>::iterator it = _frames.begin(); it != _frames.end(); it++) {
+        pi::SE3d &pose = it->pose;
         pose = plane.inverse() * pose;  // plane coordinate
     }
     return true;

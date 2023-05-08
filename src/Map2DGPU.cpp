@@ -141,9 +141,9 @@ bool Map2DGPU::Map2DGPUData::prepare(SPtr<Map2DGPUPrepare> prepared) {
     {
         _max = pi::Point3d(-1e10, -1e10, -1e10);
         _min = -_max;
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = prepared->_frames.begin();
+        for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin();
                 it != prepared->_frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+            pi::SE3d& pose = it->pose;
             pi::Point3d& t = pose.get_translation();
             _max.x = t.x > _max.x ? t.x : _max.x;
             _max.y = t.y > _max.y ? t.y : _max.y;
@@ -205,7 +205,7 @@ Map2DGPU::Map2DGPU(bool thread)
 }
 
 bool Map2DGPU::prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+        const std::deque<CameraFrame>& frames) {
     // insert frames
     SPtr<Map2DGPUPrepare> p(new Map2DGPUPrepare);
     SPtr<Map2DGPUData> d(new Map2DGPUData);
@@ -234,7 +234,7 @@ bool Map2DGPU::feed(cv::Mat img, const pi::SE3d& pose) {
         p = prepared;
         d = data;
     }
-    std::pair<cv::Mat, pi::SE3d> frame(img, p->_plane.inverse() * pose);
+    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
     if (_thread) {
         pi::WriteMutex lock(p->mutexFrames);
         p->_frames.push_back(frame);
@@ -246,7 +246,7 @@ bool Map2DGPU::feed(cv::Mat img, const pi::SE3d& pose) {
     }
 }
 
-bool Map2DGPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DGPU::renderFrame(const CameraFrame& frame) {
     SPtr<Map2DGPUPrepare> p;
     SPtr<Map2DGPUData> d;
     {
@@ -254,9 +254,9 @@ bool Map2DGPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
         p = prepared;
         d = data;
     }
-    if (frame.first.cols != p->_camera.w || frame.first.rows != p->_camera.h || frame.first.type() != CV_8UC3) {
+    if (frame.image.cols != p->_camera.w || frame.image.rows != p->_camera.h || frame.image.type() != CV_8UC3) {
         cerr << "Map2DGPU::renderFrame: "
-                "frame.first.cols!=p->_camera.w||frame.first.rows!=p->_camera.h||frame.first.type()!=CV_8UC3\n";
+                "frame.image.cols!=p->_camera.w||frame.image.rows!=p->_camera.h||frame.image.type()!=CV_8UC3\n";
         return false;
     }
     // pose->pts
@@ -271,14 +271,14 @@ bool Map2DGPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
     vector<pi::Point2d> pts;
     pts.reserve(imgPts.size());
     pi::Point3d downLook(0, 0, -1);
-    if (frame.second.get_translation().z < 0)
+    if (frame.pose.get_translation().z < 0)
         downLook = pi::Point3d(0, 0, 1);
     for (int i = 0; i < imgPts.size(); i++) {
-        pi::Point3d axis = frame.second.get_rotation() * p->UnProject(imgPts[i]);
+        pi::Point3d axis = frame.pose.get_rotation() * p->UnProject(imgPts[i]);
         if (axis.dot(downLook) < 0.4) {
             return false;
         }
-        axis = frame.second.get_translation() - axis * (frame.second.get_translation().z / axis.z);
+        axis = frame.pose.get_translation() - axis * (frame.pose.get_translation().z / axis.z);
         pts.push_back(pi::Point2d(axis.x, axis.y));
     }
     // dest location?
@@ -344,15 +344,15 @@ bool Map2DGPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
     inv.convertTo(inv, CV_32FC1);
     // warp and render with CUDA
     pi::timer.enter("Map2DGPU::UploadImage");
-    CudaImage<uchar3> cudaFrame(frame.first.rows, frame.first.cols);
-    checkCudaErrors(cudaMemcpy(cudaFrame.data, frame.first.data, cudaFrame.cols * cudaFrame.rows * sizeof(uchar3),
+    CudaImage<uchar3> cudaFrame(frame.image.rows, frame.image.cols);
+    checkCudaErrors(cudaMemcpy(cudaFrame.data, frame.image.data, cudaFrame.cols * cudaFrame.rows * sizeof(uchar3),
             cudaMemcpyHostToDevice));
     pi::timer.leave("Map2DGPU::UploadImage");
 
     // apply dst to eles
     pi::timer.enter("Map2DGPU::Apply");
     std::vector<SPtr<Map2DGPUEle> > dataCopy = d->data();
-    pi::Point3d translation = frame.second.get_translation();
+    pi::Point3d translation = frame.pose.get_translation();
     int cenX = (translation.x - d->min().x) * d->lengthPixelInv();
     int cenY = (translation.y - d->min().y) * d->lengthPixelInv();
     {
@@ -479,7 +479,7 @@ bool Map2DGPU::spreadMap(double xmin, double ymin, double xmax, double ymax) {
     return true;
 }
 
-bool Map2DGPU::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DGPU::getFrame(CameraFrame& frame) {
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
     if (prepared->_frames.size()) {
@@ -491,7 +491,7 @@ bool Map2DGPU::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
 }
 
 void Map2DGPU::run() {
-    std::pair<cv::Mat, pi::SE3d> frame;
+    CameraFrame frame;
     while (!shouldStop()) {
         if (_valid) {
             if (getFrame(frame)) {
@@ -527,11 +527,11 @@ void Map2DGPU::draw() {
     pi::TicTac ticTac;
     ticTac.Tic();
     {
-        std::deque<std::pair<cv::Mat, pi::SE3d> > frames = p->getFrames();
+        std::deque<CameraFrame> frames = p->getFrames();
         glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = frames.begin(); it != frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+        for (std::deque<CameraFrame>::iterator it = frames.begin(); it != frames.end(); it++) {
+            pi::SE3d& pose = it->pose;
             glColor3ub(255, 0, 0);
             glVertex(pose.get_translation());
             glVertex(pose * pi::Point3d(1, 0, 0));

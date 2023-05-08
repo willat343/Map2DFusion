@@ -49,9 +49,9 @@ bool Map2DCPU::Map2DCPUData::prepare(SPtr<Map2DCPUPrepare> prepared) {
     {
         _max = pi::Point3d(-1e10, -1e10, -1e10);
         _min = -_max;
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = prepared->_frames.begin();
+        for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin();
                 it != prepared->_frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+            pi::SE3d& pose = it->pose;
             pi::Point3d& t = pose.get_translation();
             _max.x = t.x > _max.x ? t.x : _max.x;
             _max.y = t.y > _max.y ? t.y : _max.y;
@@ -107,7 +107,7 @@ Map2DCPU::Map2DCPU(bool thread)
       _thread(thread) {}
 
 bool Map2DCPU::prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+        const std::deque<CameraFrame>& frames) {
     // insert frames
     SPtr<Map2DCPUPrepare> p(new Map2DCPUPrepare);
     SPtr<Map2DCPUData> d(new Map2DCPUData);
@@ -136,7 +136,7 @@ bool Map2DCPU::feed(cv::Mat img, const pi::SE3d& pose) {
         p = prepared;
         d = data;
     }
-    std::pair<cv::Mat, pi::SE3d> frame(img, p->_plane.inverse() * pose);
+    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
     if (_thread) {
         pi::WriteMutex lock(p->mutexFrames);
         p->_frames.push_back(frame);
@@ -148,7 +148,7 @@ bool Map2DCPU::feed(cv::Mat img, const pi::SE3d& pose) {
     }
 }
 
-bool Map2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DCPU::renderFrame(const CameraFrame& frame) {
     SPtr<Map2DCPUPrepare> p;
     SPtr<Map2DCPUData> d;
     {
@@ -156,9 +156,9 @@ bool Map2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
         p = prepared;
         d = data;
     }
-    if (frame.first.cols != p->_camera.w || frame.first.rows != p->_camera.h || frame.first.type() != CV_8UC3) {
+    if (frame.image.cols != p->_camera.w || frame.image.rows != p->_camera.h || frame.image.type() != CV_8UC3) {
         cerr << "Map2DCPU::renderFrame: "
-                "frame.first.cols!=p->_camera.w||frame.first.rows!=p->_camera.h||frame.first.type()!=CV_8UC3\n";
+                "frame.image.cols!=p->_camera.w||frame.image.rows!=p->_camera.h||frame.image.type()!=CV_8UC3\n";
         return false;
     }
     // pose->pts
@@ -173,14 +173,14 @@ bool Map2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
     vector<pi::Point2d> pts;
     pts.reserve(imgPts.size());
     pi::Point3d downLook(0, 0, -1);
-    if (frame.second.get_translation().z < 0)
+    if (frame.pose.get_translation().z < 0)
         downLook = pi::Point3d(0, 0, 1);
     for (int i = 0; i < imgPts.size(); i++) {
-        pi::Point3d axis = frame.second.get_rotation() * p->UnProject(imgPts[i]);
+        pi::Point3d axis = frame.pose.get_rotation() * p->UnProject(imgPts[i]);
         if (axis.dot(downLook) < 0.4) {
             return false;
         }
-        axis = frame.second.get_translation() - axis * (frame.second.get_translation().z / axis.z);
+        axis = frame.pose.get_translation() - axis * (frame.pose.get_translation().z / axis.z);
         pts.push_back(pi::Point2d(axis.x, axis.y));
     }
     // dest location?
@@ -231,10 +231,10 @@ bool Map2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
     }
     // prepare dst image
     cv::Mat src;
-    if (weightImage.empty() || weightImage.cols != frame.first.cols || weightImage.rows != frame.first.rows) {
+    if (weightImage.empty() || weightImage.cols != frame.image.cols || weightImage.rows != frame.image.rows) {
         pi::WriteMutex lock(mutex);
-        int w = frame.first.cols;
-        int h = frame.first.rows;
+        int w = frame.image.cols;
+        int h = frame.image.rows;
         weightImage.create(h, w, CV_8UC4);
         pi::byte* p = (weightImage.data);
         float x_center = w / 2;
@@ -260,8 +260,8 @@ bool Map2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
         src = weightImage.clone();
     }
     pi::Array_<pi::byte, 4>* psrc = (pi::Array_<pi::byte, 4>*)src.data;
-    pi::Array_<pi::byte, 3>* pimg = (pi::Array_<pi::byte, 3>*)frame.first.data;
-    //    float weight=(frame.second.get_rotation()*pi::Point3d(0,0,1)).dot(downLook);
+    pi::Array_<pi::byte, 3>* pimg = (pi::Array_<pi::byte, 3>*)frame.image.data;
+    //    float weight=(frame.pose.get_rotation()*pi::Point3d(0,0,1)).dot(downLook);
     for (int i = 0, iend = weightImage.cols * weightImage.rows; i < iend; i++) {
         *((pi::Array_<pi::byte, 3>*)psrc) = *pimg;
         //        psrc->data[3]*=weight;
@@ -366,7 +366,7 @@ bool Map2DCPU::spreadMap(double xmin, double ymin, double xmax, double ymax) {
     return true;
 }
 
-bool Map2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DCPU::getFrame(CameraFrame& frame) {
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
     if (prepared->_frames.size()) {
@@ -378,7 +378,7 @@ bool Map2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
 }
 
 void Map2DCPU::run() {
-    std::pair<cv::Mat, pi::SE3d> frame;
+    CameraFrame frame;
     while (!shouldStop()) {
         if (_valid) {
             if (getFrame(frame)) {
@@ -409,11 +409,11 @@ void Map2DCPU::draw() {
     pi::TicTac ticTac;
     ticTac.Tic();
     {
-        std::deque<std::pair<cv::Mat, pi::SE3d> > frames = p->getFrames();
+        std::deque<CameraFrame> frames = p->getFrames();
         glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = frames.begin(); it != frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+        for (std::deque<CameraFrame>::iterator it = frames.begin(); it != frames.end(); it++) {
+            pi::SE3d& pose = it->pose;
             glColor3ub(255, 0, 0);
             glVertex(pose.get_translation());
             glVertex(pose * pi::Point3d(1, 0, 0));

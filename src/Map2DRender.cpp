@@ -314,7 +314,7 @@ Map2DRender::Map2DRenderEle::~Map2DRenderEle() {
 }
 
 bool Map2DRender::Map2DRenderPrepare::prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+        const std::deque<CameraFrame>& frames) {
     if (frames.size() == 0 || camera.w <= 0 || camera.h <= 0 || camera.fx == 0 || camera.fy == 0) {
         cerr << "Map2DRender::Map2DRenderPrepare::prepare:Not valid prepare!\n";
         return false;
@@ -324,8 +324,8 @@ bool Map2DRender::Map2DRenderPrepare::prepare(const pi::SE3d& plane, const PinHo
     _fyinv = 1. / camera.fy;
     _plane = plane;
     _frames = frames;
-    for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = _frames.begin(); it != _frames.end(); it++) {
-        pi::SE3d& pose = it->second;
+    for (std::deque<CameraFrame>::iterator it = _frames.begin(); it != _frames.end(); it++) {
+        pi::SE3d& pose = it->pose;
         pose = plane.inverse() * pose;  // plane coordinate
     }
     return true;
@@ -337,9 +337,9 @@ bool Map2DRender::Map2DRenderData::prepare(SPtr<Map2DRenderPrepare> prepared) {
     {
         _max = pi::Point3d(-1e10, -1e10, -1e10);
         _min = -_max;
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = prepared->_frames.begin();
+        for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin();
                 it != prepared->_frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+            pi::SE3d& pose = it->pose;
             pi::Point3d& t = pose.get_translation();
             _max.x = t.x > _max.x ? t.x : _max.x;
             _max.y = t.y > _max.y ? t.y : _max.y;
@@ -390,7 +390,7 @@ Map2DRender::Map2DRender(bool thread)
       _thread(thread) {}
 
 bool Map2DRender::prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+        const std::deque<CameraFrame>& frames) {
     // insert frames
     SPtr<Map2DRenderPrepare> p(new Map2DRenderPrepare);
     SPtr<Map2DRenderData> d(new Map2DRenderData);
@@ -419,7 +419,7 @@ bool Map2DRender::feed(cv::Mat img, const pi::SE3d& pose) {
         p = prepared;
         d = data;
     }
-    std::pair<cv::Mat, pi::SE3d> frame(img, p->_plane.inverse() * pose);
+    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
     if (_thread) {
         pi::WriteMutex lock(p->mutexFrames);
         p->_frames.push_back(frame);
@@ -431,7 +431,7 @@ bool Map2DRender::feed(cv::Mat img, const pi::SE3d& pose) {
     }
 }
 
-bool Map2DRender::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DRender::getFrame(CameraFrame& frame) {
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
     if (prepared->_frames.size()) {
@@ -442,11 +442,11 @@ bool Map2DRender::getFrame(std::pair<cv::Mat, pi::SE3d>& frame) {
         return false;
 }
 
-bool Map2DRender::renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame) {
+bool Map2DRender::renderFrame(const CameraFrame& frame) {
     return false;
 }
 
-bool Map2DRender::getFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+bool Map2DRender::getFrames(std::deque<CameraFrame>& frames) {
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
     if (prepared->_frames.size()) {
@@ -457,7 +457,7 @@ bool Map2DRender::getFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
         return false;
 }
 
-bool Map2DRender::renderFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames) {
+bool Map2DRender::renderFrames(std::deque<CameraFrame>& frames) {
     // 0. Prepare things
     SPtr<Map2DRenderPrepare> p;
     SPtr<Map2DRenderData> d;
@@ -514,9 +514,9 @@ bool Map2DRender::renderFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames
     int idx = 0;
     std::vector<pi::Point2d> planePts = imgPts;
     pi::Point3d downLook(0, 0, -1);
-    for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = frames.begin(); it < frames.end(); it++, idx++) {
-        cv::Mat& img = it->first;
-        pi::SE3d& pose = it->second;
+    for (std::deque<CameraFrame>::iterator it = frames.begin(); it < frames.end(); it++, idx++) {
+        cv::Mat& img = it->image;
+        pi::SE3d& pose = it->pose;
         pi::Point2d curMin(1e6, 1e6), curMax(-1e6, -1e6);
         bool bOK = true;
         if (pose.get_translation().z < 0)
@@ -764,7 +764,7 @@ bool Map2DRender::spreadMap(double xmin, double ymin, double xmax, double ymax) 
 }
 
 void Map2DRender::run() {
-    std::deque<std::pair<cv::Mat, pi::SE3d> > frames;
+    std::deque<CameraFrame> frames;
     while (!shouldStop()) {
         if (_valid) {
             if (getFrames(frames)) {
@@ -796,11 +796,11 @@ void Map2DRender::draw() {
     pi::TicTac ticTac;
     ticTac.Tic();
     {
-        std::deque<std::pair<cv::Mat, pi::SE3d> > frames = p->getFrames();
+        std::deque<CameraFrame> frames = p->getFrames();
         glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
-        for (std::deque<std::pair<cv::Mat, pi::SE3d> >::iterator it = frames.begin(); it != frames.end(); it++) {
-            pi::SE3d& pose = it->second;
+        for (std::deque<CameraFrame>::iterator it = frames.begin(); it != frames.end(); it++) {
+            pi::SE3d& pose = it->pose;
             glColor3ub(255, 0, 0);
             glVertex(pose.get_translation());
             glVertex(pose * pi::Point3d(1, 0, 0));

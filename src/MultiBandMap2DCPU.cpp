@@ -273,9 +273,9 @@ bool MultiBandMap2DCPU::MultiBandMap2DCPUData::prepare(SPtr<MultiBandMap2DCPUPre
     // Find the minimum and maximum x, y, z coordinates in the loaded poses
     _max = pi::Point3d(-1e10, -1e10, -1e10);
     _min = -_max;
-    for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = prepared->_frames.begin();
+    for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin();
             it != prepared->_frames.end(); it++) {
-        pi::SE3d &pose = it->second;
+        pi::SE3d &pose = it->pose;
         pi::Point3d &t = pose.get_translation();
         _max.x = t.x > _max.x ? t.x : _max.x;
         _max.y = t.y > _max.y ? t.y : _max.y;
@@ -358,7 +358,7 @@ MultiBandMap2DCPU::MultiBandMap2DCPU(bool thread)
 }
 
 bool MultiBandMap2DCPU::prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-        const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames) {
+        const std::deque<CameraFrame> &frames) {
     // insert frames
     SPtr<MultiBandMap2DCPUPrepare> p(new MultiBandMap2DCPUPrepare);
     SPtr<MultiBandMap2DCPUData> d(new MultiBandMap2DCPUData);
@@ -401,7 +401,7 @@ bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
     }
 
     // Create frame pair while converting the pose
-    std::pair<cv::Mat, pi::SE3d> frame(img, p->_plane.inverse() * pose);
+    CameraFrame frame = {img, cv::Mat(), p->_plane.inverse() * pose};
 
     // If threding is enabled
     if (_thread) {
@@ -421,7 +421,7 @@ bool MultiBandMap2DCPU::feed(cv::Mat img, const pi::SE3d &pose) {
     }
 }
 
-bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
+bool MultiBandMap2DCPU::renderFrame(const CameraFrame &frame) {
     // Get the prepared frames (p) and grid data (d). Note that the mutex is used incorrectly. A (shared) pointer is
     // acquired but the data can still be read/written by this and any other thread once the mutex goes out of scope.
     SPtr<MultiBandMap2DCPUPrepare> p;
@@ -433,9 +433,9 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     }
 
     // Check the image data matches expected dimensions and type.
-    if (frame.first.cols != p->_camera.w || frame.first.rows != p->_camera.h || frame.first.type() != CV_8UC3) {
+    if (frame.image.cols != p->_camera.w || frame.image.rows != p->_camera.h || frame.image.type() != CV_8UC3) {
         cerr << "MultiBandMap2DCPU::renderFrame: "
-                "frame.first.cols!=p->_camera.w||frame.first.rows!=p->_camera.h||frame.first.type()!=CV_8UC3\n";
+                "frame.image.cols!=p->_camera.w||frame.image.rows!=p->_camera.h||frame.image.type()!=CV_8UC3\n";
         return false;
     }
 
@@ -451,18 +451,18 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     vector<pi::Point2d> pts;
     pts.reserve(imgPts.size());
     pi::Point3d downLook(0, 0, -1);
-    if (frame.second.get_translation().z < 0)
+    if (frame.pose.get_translation().z < 0)
         downLook = pi::Point3d(0, 0, 1);
     for (int i = 0; i < imgPts.size(); i++) {
         // Compute axis as p_P'^(corner) = R_P^D * p_D^(corner), the image corner point (with homogeneous scale = 1) in
         // the orientation of the plane frame (P' has the same orientation as the plane frame P).
-        pi::Point3d axis = frame.second.get_rotation() * p->UnProject(imgPts[i]);
+        pi::Point3d axis = frame.pose.get_rotation() * p->UnProject(imgPts[i]);
         // Ensure the drone pose faces the plane
         if (axis.dot(downLook) < 0.4) {
             return false;
         }
         // Project to plane: p_P^(corner) = p_P^D - p_P'^(corner) * (z_P^D / z_P'^(corner))
-        axis = frame.second.get_translation() - axis * (frame.second.get_translation().z / axis.z);
+        axis = frame.pose.get_translation() - axis * (frame.pose.get_translation().z / axis.z);
         // Save the x and y coordinates of the projected point on the plane
         pts.push_back(pi::Point2d(axis.x, axis.y));
     }
@@ -522,11 +522,11 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     //// 3. Prepare weight image (once only)
     // The weightImage is created once (if frames remain the same size), and copied into weight_src.
     cv::Mat weight_src;
-    if (weightImage.empty() || weightImage.cols != frame.first.cols || weightImage.rows != frame.first.rows) {
+    if (weightImage.empty() || weightImage.cols != frame.image.cols || weightImage.rows != frame.image.rows) {
         // Create an image of floats with the same dimensions as the image.
         pi::WriteMutex lock(mutex);
-        int w = frame.first.cols;
-        int h = frame.first.rows;
+        int w = frame.image.cols;
+        int h = frame.image.rows;
         weightImage.create(h, w, CV_32FC1);
         float *p = (float *)weightImage.data;
         // Compute the weight for each pixel as a circular pattern, decaying linearly (by default) from 1 in the centre
@@ -576,9 +576,9 @@ bool MultiBandMap2DCPU::renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame) {
     // Convert image to 3-channel float (if MultiBandMap2DCPU.ForceFloat == 0) or 3-channel 2-byte signed int.
     cv::Mat img_src;
     if (svar.GetInt("MultiBandMap2DCPU.ForceFloat", 0)) {
-        frame.first.convertTo(img_src, CV_32FC3, 1. / 255.);
+        frame.image.convertTo(img_src, CV_32FC3, 1. / 255.);
     } else {
-        frame.first.convertTo(img_src, CV_16SC3);
+        frame.image.convertTo(img_src, CV_16SC3);
     }
 
     // Determine the size (in pixels) of warped weight image and RGB image as the number of grid elements between max
@@ -786,7 +786,7 @@ bool MultiBandMap2DCPU::spreadMap(double xmin, double ymin, double xmax, double 
  * @return true If frame exists
  * @return false If queue is empty
  */
-bool MultiBandMap2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
+bool MultiBandMap2DCPU::getFrame(CameraFrame &frame) {
     // Take Mutexes
     pi::ReadMutex lock(mutex);
     pi::ReadMutex lock1(prepared->mutexFrames);
@@ -806,7 +806,7 @@ bool MultiBandMap2DCPU::getFrame(std::pair<cv::Mat, pi::SE3d> &frame) {
  *
  */
 void MultiBandMap2DCPU::run() {
-    std::pair<cv::Mat, pi::SE3d> frame;
+    CameraFrame frame;
 
     // Check stopping condition
     while (!shouldStop()) {
@@ -858,13 +858,13 @@ void MultiBandMap2DCPU::draw() {
     ticTac.Tic();
     {
         // Get all frames
-        std::deque<std::pair<cv::Mat, pi::SE3d>> frames = p->getFrames();
+        std::deque<CameraFrame> frames = p->getFrames();
         glDisable(GL_LIGHTING);
         glBegin(GL_LINES);
 
         // For each frame draw the lines for the pose. (XYZ)
-        for (std::deque<std::pair<cv::Mat, pi::SE3d>>::iterator it = frames.begin(); it != frames.end(); it++) {
-            pi::SE3d &pose = it->second;
+        for (std::deque<CameraFrame>::iterator it = frames.begin(); it != frames.end(); it++) {
+            pi::SE3d &pose = it->pose;
             glColor3ub(255, 0, 0);
             glVertex(pose.get_translation());
             glVertex(pose * pi::Point3d(1, 0, 0));

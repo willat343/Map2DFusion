@@ -35,7 +35,7 @@ class Map2DRender : public Map2D, public pi::Thread {
         }
 
         bool prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-                const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames);
+                const std::deque<CameraFrame>& frames);
 
         pi::Point2d Project(const pi::Point3d& pt) {
             double zinv = 1. / pt.z;
@@ -46,7 +46,7 @@ class Map2DRender : public Map2D, public pi::Thread {
             return pi::Point3d((pt.x - _camera.cx) * _fxinv, (pt.y - _camera.cy) * _fyinv, 1.);
         }
 
-        std::deque<std::pair<cv::Mat, pi::SE3d> > getFrames() {
+        std::deque<CameraFrame> getFrames() {
             pi::ReadMutex lock(mutexFrames);
             return _frames;
         }
@@ -54,7 +54,7 @@ class Map2DRender : public Map2D, public pi::Thread {
         PinHoleParameters _camera;
         double _fxinv, _fyinv;
         pi::SE3d _plane;                                    // all fixed
-        std::deque<std::pair<cv::Mat, pi::SE3d> > _frames;  // camera coordinate
+        std::deque<CameraFrame> _frames;  // camera coordinate
         pi::MutexRW mutexFrames;
     };
 
@@ -146,7 +146,7 @@ public:
     }
 
     virtual bool prepare(const pi::SE3d& plane, const PinHoleParameters& camera,
-            const std::deque<std::pair<cv::Mat, pi::SE3d> >& frames);
+            const std::deque<CameraFrame>& frames);
 
     virtual bool feed(cv::Mat img, const pi::SE3d& pose);  // world coordinate
 
@@ -164,11 +164,11 @@ public:
     virtual void run();
 
 private:
-    bool getFrame(std::pair<cv::Mat, pi::SE3d>& frame);
-    bool renderFrame(const std::pair<cv::Mat, pi::SE3d>& frame);
+    bool getFrame(CameraFrame& frame);
+    bool renderFrame(const CameraFrame& frame);
 
-    bool getFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames);
-    bool renderFrames(std::deque<std::pair<cv::Mat, pi::SE3d> >& frames);
+    bool getFrames(std::deque<CameraFrame>& frames);
+    bool renderFrames(std::deque<CameraFrame>& frames);
 
     bool spreadMap(double xmin, double ymin, double xmax, double ymax);
 

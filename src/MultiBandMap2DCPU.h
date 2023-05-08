@@ -133,7 +133,7 @@ public:
     }
 
     virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames);
+            const std::deque<CameraFrame> &frames);
 
     virtual bool feed(cv::Mat img, const pi::SE3d &pose);  // world coordinate
 
@@ -151,8 +151,8 @@ public:
     virtual void run();
 
 private:
-    bool getFrame(std::pair<cv::Mat, pi::SE3d> &frame);
-    bool renderFrame(const std::pair<cv::Mat, pi::SE3d> &frame);
+    bool getFrame(CameraFrame &frame);
+    bool renderFrame(const CameraFrame &frame);
     bool spreadMap(double xmin, double ymin, double xmax, double ymax);
 
     // source

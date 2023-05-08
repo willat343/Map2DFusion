@@ -45,6 +45,12 @@ struct PinHoleParameters {
     double w, h, fx, fy, cx, cy;
 };
 
+struct CameraFrame {
+    cv::Mat image;
+    cv::Mat sem;
+    pi::SE3d pose;
+};
+
 struct Map2DPrepare  // change when prepare
 {
     uint queueSize() {
@@ -53,7 +59,7 @@ struct Map2DPrepare  // change when prepare
     }
 
     bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames);
+            const std::deque<CameraFrame> &frames);
 
     pi::Point2d Project(const pi::Point3d &pt) {
         double zinv = 1. / pt.z;
@@ -64,7 +70,7 @@ struct Map2DPrepare  // change when prepare
         return pi::Point3d((pt.x - _camera.cx) * _fxinv, (pt.y - _camera.cy) * _fyinv, 1.);
     }
 
-    std::deque<std::pair<cv::Mat, pi::SE3d>> getFrames() {
+    std::deque<CameraFrame> getFrames() {
         pi::ReadMutex lock(mutexFrames);
         return _frames;
     }
@@ -72,7 +78,7 @@ struct Map2DPrepare  // change when prepare
     PinHoleParameters _camera;
     double _fxinv, _fyinv;
     pi::SE3d _plane;                                   // all fixed
-    std::deque<std::pair<cv::Mat, pi::SE3d>> _frames;  // camera coordinate
+    std::deque<CameraFrame> _frames;  // camera coordinate
     pi::MutexRW mutexFrames;
 };
 
@@ -90,7 +96,7 @@ public:
     virtual ~Map2D() {}
 
     virtual bool prepare(const pi::SE3d &plane, const PinHoleParameters &camera,
-            const std::deque<std::pair<cv::Mat, pi::SE3d>> &frames) {
+            const std::deque<CameraFrame> &frames) {
         return false;
     }
 
