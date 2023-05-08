@@ -1,3 +1,5 @@
+#include "MultiBandMap2DCPUSem.h"
+
 #include <GL/gl.h>
 #include <base/Svar/Svar.h>
 #include <base/time/Global_Timer.h>
@@ -7,8 +9,6 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/stitching/stitcher.hpp>
-
-#include "MultiBandMap2DCPUSem.h"
 
 #define HAS_GOOGLEMAP
 #ifdef HAS_GOOGLEMAP
@@ -89,7 +89,8 @@ bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::mulWeightMap(const cv::Mat &
     return true;
 }
 
-cv::Mat MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::blend(const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors) {
+cv::Mat MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::blend(
+        const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors) {
     // Return empty matrix if laplace pyramid is empty
     if (!pyr_laplace.size())
         return cv::Mat();
@@ -130,7 +131,7 @@ cv::Mat MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::blend(const std::vector<S
                             if (ele->pyr_laplace[i].empty())
                                 continue;
                             // Copy a region from the neighbourhood to the new laplacian pyramid level image with a
-                            // slightly bigger size. This thus includes the neighbouring pixels in the new image. 
+                            // slightly bigger size. This thus includes the neighbouring pixels in the new image.
                             cv::Rect src, dst;
                             src.width = dst.width = (x == 1) ? srcrows : borderSize;
                             src.height = dst.height = (y == 1) ? srcrows : borderSize;
@@ -179,7 +180,8 @@ cv::Mat MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::blend(const std::vector<S
  * @return true
  * @return false If there is no texture map returned or wrong type
  */
-bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::updateTexture(const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors) {
+bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::updateTexture(
+        const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors) {
     // Blend with the neighbors (if neighbors is not NULL)
     cv::Mat tmp = blend(neighbors);
     uint type = 0;
@@ -227,8 +229,8 @@ bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::updateTexture(const std::vec
     return true;
 }
 
-MultiBandMap2DCPUSem::MultiBandMap2DCPUSemData::MultiBandMap2DCPUSemData(double eleSize_, double lengthPixel_, pi::Point3d max_,
-        pi::Point3d min_, int w_, int h_, const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &d_)
+MultiBandMap2DCPUSem::MultiBandMap2DCPUSemData::MultiBandMap2DCPUSemData(double eleSize_, double lengthPixel_,
+        pi::Point3d max_, pi::Point3d min_, int w_, int h_, const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &d_)
     : _eleSize(eleSize_),
       _eleSizeInv(1. / eleSize_),
       _lengthPixel(lengthPixel_),          // Pixel length (Map2D.Resolution)
@@ -251,8 +253,7 @@ bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemData::prepare(SPtr<MultiBandMap2D
     // Find the minimum and maximum x, y, z coordinates in the loaded poses
     _max = pi::Point3d(-1e10, -1e10, -1e10);
     _min = -_max;
-    for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin();
-            it != prepared->_frames.end(); it++) {
+    for (std::deque<CameraFrame>::iterator it = prepared->_frames.begin(); it != prepared->_frames.end(); it++) {
         pi::SE3d &pose = it->pose;
         pi::Point3d &t = pose.get_translation();
         _max.x = t.x > _max.x ? t.x : _max.x;
@@ -324,12 +325,12 @@ bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemData::prepare(SPtr<MultiBandMap2D
  * @param thread Threding flag,  true if running in separate thread
  */
 MultiBandMap2DCPUSem::MultiBandMap2DCPUSem(bool thread)
-    : alpha(svar.GetInt("Map2D.Alpha", 0)),                      // GL_ALPHA_TEST flag, true => enable GL_ALPHA_TEST
-      _valid(false),                                             // Prepare flag, true if prepared
-      _thread(thread),                                           // Threading flag, true if running in separate thread
+    : alpha(svar.GetInt("Map2D.Alpha", 0)),  // GL_ALPHA_TEST flag, true => enable GL_ALPHA_TEST
+      _valid(false),                         // Prepare flag, true if prepared
+      _thread(thread),                       // Threading flag, true if running in separate thread
       _bandNum(svar.GetInt("MultiBandMap2DCPUSem.BandNumber", 5)),  // Number of bands for the renderFrame
-      _highQualityShow(
-              svar.GetInt("MultiBandMap2DCPUSem.HighQualityShow", 1))  // High quality flag, true => blend using neighbors
+      _highQualityShow(svar.GetInt("MultiBandMap2DCPUSem.HighQualityShow",
+              1))  // High quality flag, true => blend using neighbors
 {
     _bandNum = min(_bandNum,
             static_cast<int>(ceil(log(ELE_PIXELS) / log(2.0))));  // Calculate number of bands for the renderFrame
@@ -463,8 +464,8 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
     }
     // If the points lie outside of the current bounds (defined in data), expand the size of the map (data)
     if (xmin < d->min().x || xmax > d->max().x || ymin < d->min().y || ymax > d->max().y) {
-        // Make sure p still points to the same prepared data. This should only fail if MultiBandMap2DCPUSem::prepare has
-        // been called again, but this only occurs once at the start before this function is called.
+        // Make sure p still points to the same prepared data. This should only fail if MultiBandMap2DCPUSem::prepare
+        // has been called again, but this only occurs once at the start before this function is called.
         if (p != prepared) {
             return false;
         }
@@ -563,20 +564,24 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
     // and min multiplied by the number of pixels per element.
     cv::Mat image_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, img_src.type());
     cv::Mat weight_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, CV_32FC1);
+    cv::Mat sem_warped((ymaxInt - yminInt) * ELE_PIXELS, (xmaxInt - xminInt) * ELE_PIXELS, frame.sem.type());
 
     // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
     // borders. For the weight image, interpolate to the nearest pixel and use default constant border.
     cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR, cv::BORDER_REFLECT);
     cv::warpPerspective(weight_src, weight_warped, transmtx, weight_warped.size(), cv::INTER_NEAREST);
+    cv::warpPerspective(frame.sem, sem_warped, transmtx, sem_warped.size(), cv::INTER_NEAREST);
 
     // Display/save the warped images if configured to, waiting until key is pressed.
     if (svar.GetInt("ShowWarped", 0)) {
+        std::cerr << "showing warp image\n";
         cv::imshow("image_warped", image_warped);
         cv::imshow("weight_warped", weight_warped);
+        cv::imshow("sem_warped", sem_warped);
         if (svar.GetInt("SaveImageWarped")) {
             cout << "Saving warped image.\n";
             cv::imwrite("image_warped.png", image_warped);
-            cv::imwrite("weight_warped.png", weight_warped);
+            cv::imwrite("sem_warped.png", sem_warped);
         }
         // Wait forever until key is pressed
         cv::waitKey(0);
@@ -612,6 +617,11 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                 ele->weights.resize(_bandNum + 1);
             }
 
+            // srcSem = pointer to a pixel in the element's semantic image
+            pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data;
+            // dstSem = pointer to a pixel in the element's semantic image
+            pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
+
             // Iterate over the Laplacian pyramid levels. Start with width/height equal to the patch size (256x256) and
             // halve this size at each level
             int width = ELE_PIXELS, height = ELE_PIXELS;
@@ -646,13 +656,17 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         float *dstW = (float *)ele->weights[i].data;
 
                         // Iterate over every pixel in the patch (size depends on level, (256/2^i, 256/2^i))
-                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip) {
-                            for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
+                        for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
+                            for (int eleX = 0; eleX < width;
+                                    eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
                                 // If the weight is higher in the (new) image for this pixel than saved in the element,
                                 // then update the laplacian pyramid pixel value and weight value in the element.
-                                if ((*srcW) >= (*dstW)) {
-                                    *dstL = (*srcL);
+                                if (*srcW >= *dstW) {
+                                    *dstL = *srcL;
                                     *dstW = *srcW;
+                                    if (i == 0) {
+                                        *dstSem = *srcSem;
+                                    }
                                 }
                             }
                         }
@@ -669,10 +683,14 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         float *dstW = (float *)ele->weights[i].data;
 
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip)
-                            for (int eleX = 0; eleX < width; eleX++, srcL++, dstL++, srcW++, dstW++) {
-                                if ((*srcW) >= (*dstW)) {
-                                    *dstL = (*srcL);
+                            for (int eleX = 0; eleX < width;
+                                    eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
+                                if (*srcW >= *dstW) {
+                                    *dstL = *srcL;
                                     *dstW = *srcW;
+                                    if (i == 0) {
+                                        *dstSem = *srcSem;
+                                    }
                                 }
                             }
                     }
@@ -1012,7 +1030,7 @@ void MultiBandMap2DCPUSem::draw() {
 
 /**
  * @brief Save orthomosaic to an image file
- * 
+ *
  * @param filename Output file name
  * @return true Successful
  * @return false No Eles in the MultiBandMap2DCPUSemData
@@ -1118,7 +1136,7 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename) {
             }
         }
     }
-    
+
     // Restore image from Laplace pyramids
     cv::detail::restoreImageFromLaplacePyr(pyr_laplace);
 
