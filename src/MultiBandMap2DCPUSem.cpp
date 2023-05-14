@@ -183,8 +183,15 @@ cv::Mat MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::blend(
 bool MultiBandMap2DCPUSem::MultiBandMap2DCPUSemEle::updateTexture(
         const std::vector<SPtr<MultiBandMap2DCPUSemEle>> &neighbors) {
     // Blend with the neighbors (if neighbors is not NULL)
-    cv::Mat tmp = blend(neighbors);
+    cv::Mat tmp;
     uint type = 0;
+    if (svar.GetInt("Map2D.ShowSemBlending", 0)) {
+        tmp = this->pyr_sem[0];
+        type = GL_UNSIGNED_BYTE;
+    }
+    else {
+        tmp = blend(neighbors);
+    }
 
     // Check new texture map type
     // If there is no texture map returned, fail
