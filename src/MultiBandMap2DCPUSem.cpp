@@ -597,9 +597,13 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
     // Create the corresponding weight pyramid, by creating K + 1 pyramidal weight images.
     std::vector<cv::Mat> pyr_weights(_bandNum + 1);
+    std::vector<cv::Mat> pyr_sem(_bandNum + 1);
     pyr_weights[0] = weight_warped;
+    pyr_sem[0] = sem_warped;
     for (int i = 0; i < _bandNum; ++i) {
         cv::pyrDown(pyr_weights[i], pyr_weights[i + 1]);
+        cv::resize(pyr_sem[i], pyr_sem[i + 1], cv::Size(pyr_sem[i].cols / 2, pyr_sem[i].rows / 2), 0.0, 0.0,
+                cv::INTER_NEAREST);
     }
 
     pi::timer.enter("MultiBandMap2DCPUSem::Apply");
@@ -618,6 +622,7 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
             if (!ele->pyr_laplace.size()) {
                 ele->pyr_laplace.resize(_bandNum + 1);
                 ele->weights.resize(_bandNum + 1);
+                ele->pyr_sem.resize(_bandNum + 1);
             }
 
             // Iterate over the Laplacian pyramid levels. Start with width/height equal to the patch size (256x256) and
@@ -632,9 +637,7 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                     // laplacian pyramid and weights
                     pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
                     pyr_weights[i](rect).copyTo(ele->weights[i]);
-                    if (i == 0) {
-                        sem_warped(rect).copyTo(ele->sem);
-                    }
+                    pyr_sem[i](rect).copyTo(ele->pyr_sem[i]);
                 } else {
                     //// Case 2: Element is not new and blending is required
 
@@ -651,27 +654,33 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         // srcW = pointer to a pixel in the current weights image, starting at element origin
                         float *srcW = ((float *)pyr_weights[i].data) + org;
                         // srcSem = pointer to a pixel in the element's semantic image
-                        pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data + org;
+                        pi::Point3ub *srcSem = (pi::Point3ub *)pyr_sem[i].data + org;
 
                         // dstL = pointer to a pixel in the element's current laplacian pyramid image
                         pi::Point3f *dstL = (pi::Point3f *)ele->pyr_laplace[i].data;
                         // dstW = pointer to a pixel in the element's current weights image
                         float *dstW = (float *)ele->weights[i].data;
                         // dstSem = pointer to a pixel in the element's semantic image
-                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
+                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->pyr_sem[i].data;
 
                         // Iterate over every pixel in the patch (size depends on level, (256/2^i, 256/2^i))
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
-                                // If the weight is higher in the (new) image for this pixel than saved in the element,
-                                // then update the laplacian pyramid pixel value and weight value in the element.
-                                if (*srcW >= *dstW) {
-                                    *dstL = *srcL;
-                                    *dstW = *srcW;
-                                    if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
-                                                          pixelid_to_label.at(pixelid(*dstSem)).priority) {
-                                        *dstSem = *srcSem;
+                                // Weight increase
+                                bool weight_increase = *srcW >= *dstW;
+
+                                // Compute priorities of pixels
+                                int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
+                                int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
+
+                                // Update semantic segentation if priority increases or equal and weight increases
+                                if (srcPriority > dstPriority || (srcPriority == dstPriority && weight_increase)) {
+                                    *dstSem = *srcSem;
+                                    // Update the RGB if the weight increases or moving from 1 -> 2
+                                    if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
+                                        *dstL = *srcL;
+                                        *dstW = *srcW;
                                     }
                                 }
                             }
@@ -684,21 +693,29 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
                         pi::Point3_<short> *srcL = ((pi::Point3_<short> *)pyr_laplace[i].data) + org;
                         float *srcW = ((float *)pyr_weights[i].data) + org;
-                        pi::Point3ub *srcSem = (pi::Point3ub *)sem_warped.data + org;
+                        pi::Point3ub *srcSem = (pi::Point3ub *)pyr_sem[i].data + org;
 
                         pi::Point3_<short> *dstL = (pi::Point3_<short> *)ele->pyr_laplace[i].data;
                         float *dstW = (float *)ele->weights[i].data;
-                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->sem.data;
+                        pi::Point3ub *dstSem = (pi::Point3ub *)ele->pyr_sem[i].data;
 
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
-                                if (*srcW >= *dstW) {
-                                    *dstL = *srcL;
-                                    *dstW = *srcW;
-                                    if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
-                                                          pixelid_to_label.at(pixelid(*dstSem)).priority) {
-                                        *dstSem = *srcSem;
+                                // Weight increase
+                                bool weight_increase = *srcW >= *dstW;
+
+                                // Compute priorities of pixels
+                                int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
+                                int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
+
+                                // Update semantic segentation if priority increases or equal and weight increases
+                                if (srcPriority > dstPriority || (srcPriority == dstPriority && weight_increase)) {
+                                    *dstSem = *srcSem;
+                                    // Update the RGB if the weight increases or moving from 1 -> 2
+                                    if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
+                                        *dstL = *srcL;
+                                        *dstW = *srcW;
                                     }
                                 }
                             }
@@ -1139,7 +1156,7 @@ bool MultiBandMap2DCPUSem::save(const std::string &filename, const std::string &
                     if (i == 0) {
                         // ele->weights[i].copyTo(pyr_weights[i](rect));
                         ele->weights[i].copyTo(pyr_weights(rect));
-                        ele->sem.copyTo(sem(rect));
+                        ele->pyr_sem[i].copyTo(sem(rect));
                     }
 
                     // Halve the size

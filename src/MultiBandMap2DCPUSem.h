@@ -33,7 +33,7 @@ class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
 
         std::vector<cv::Mat> pyr_laplace;
         std::vector<cv::Mat> weights;
-        cv::Mat sem;
+        std::vector<cv::Mat> pyr_sem;
 
         uint texName;
         bool Ischanged;
