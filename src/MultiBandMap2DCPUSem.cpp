@@ -579,23 +579,9 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
     // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
     // borders. For the weight image, interpolate to the nearest pixel and use default constant border.
-    cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR, cv::BORDER_REFLECT);
+    cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR);//, cv::BORDER_REFLECT);
     cv::warpPerspective(weight_src, weight_warped, transmtx, weight_warped.size(), cv::INTER_NEAREST);
     cv::warpPerspective(frame.sem, sem_warped, transmtx, sem_warped.size(), cv::INTER_NEAREST);
-
-    // Display/save the warped images if configured to, waiting until key is pressed.
-    if (svar.GetInt("ShowWarped", 0)) {
-        cv::imshow("image_warped", image_warped);
-        cv::imshow("weight_warped", weight_warped);
-        cv::imshow("sem_warped", sem_warped);
-        if (svar.GetInt("SaveImageWarped")) {
-            cout << "Saving warped image.\n";
-            cv::imwrite("image_warped.png", image_warped);
-            cv::imwrite("sem_warped.png", sem_warped);
-        }
-        // Wait forever until key is pressed
-        cv::waitKey(0);
-    }
 
     //// 5. Perform the blending of the warped image with the grid (data)
     // Create an N-level Laplacian pyramid of the RGB image where N equals the number of bands K
@@ -619,6 +605,47 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
             cv::resize(pyr_sem[i], pyr_sem[i + 1], cv::Size(pyr_sem[i].cols / 2, pyr_sem[i].rows / 2), 0.0, 0.0,
                     cv::INTER_NEAREST);
         }
+    }
+
+    // Display/save the warped images if configured to, waiting until key is pressed.
+    static int img_idx = 0;
+    if (svar.GetInt("ShowWarped", 0) && img_idx++ == svar.GetInt("SaveImageIdx", 0)) {
+        cv::imshow("image_warped", image_warped);
+        cv::imshow("weight_warped", weight_warped);
+        cv::imshow("sem_warped", sem_warped);
+        if (svar.GetInt("SaveImageWarped")) {
+            cv::Mat weight_src_save = weight_src.clone(), weight_warped_save = weight_warped.clone();
+            weight_src_save *= 255.0;
+            weight_warped_save *= 255.0;
+            weight_src_save.convertTo(weight_src_save, CV_8UC1);
+            weight_warped_save.convertTo(weight_warped_save, CV_8UC1);
+            cv::imwrite("image_unwarped.png", img_src);
+            cv::imwrite("weight_unwarped.png", weight_src_save);
+            cv::imwrite("sem_unwarped.png", frame.sem);
+            cv::imwrite("image_warped.png", image_warped);
+            cv::imwrite("weight_warped.png", weight_warped_save);
+            cv::imwrite("sem_warped.png", sem_warped);
+
+            // Pyramid image
+            cv::Mat pyr_laplace_save(pyr_laplace[0].size(), pyr_laplace[0].type());
+            cv::Mat pyr_weights_save(pyr_weights[0].size(), pyr_weights[0].type());
+            cv::Mat pyr_sem_save(pyr_sem[0].size(), pyr_sem[0].type());
+            for (int i = 0; i < _bandNum; ++i) {
+                cv::Mat pyr_laplace_norm;
+                cv::normalize(pyr_laplace[i], pyr_laplace_norm, 65535, 0);
+                cv::Rect rect(0, 0, pyr_laplace[i].cols, pyr_laplace[i].rows);
+                pyr_laplace_norm.copyTo(pyr_laplace_save(rect));
+                pyr_weights[i].copyTo(pyr_weights_save(rect));
+                pyr_sem[i].copyTo(pyr_sem_save(rect));
+            }
+            pyr_weights_save *= 255.0;
+            pyr_weights_save.convertTo(pyr_weights_save, CV_8UC1);
+            cv::imwrite("pyr_laplace.png", pyr_laplace_save);
+            cv::imwrite("pyr_weight.png", pyr_weights_save);
+            cv::imwrite("pyr_sem.png", pyr_sem_save);
+        }
+        // Wait forever until key is pressed
+        cv::waitKey(0);
     }
 
     pi::timer.enter("MultiBandMap2DCPUSem::Apply");
