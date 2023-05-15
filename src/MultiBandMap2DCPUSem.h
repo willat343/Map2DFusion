@@ -34,6 +34,7 @@ class MultiBandMap2DCPUSem : public Map2D, public pi::Thread {
         std::vector<cv::Mat> pyr_laplace;
         std::vector<cv::Mat> weights;
         std::vector<cv::Mat> pyr_sem;
+        std::unordered_map<std::uint32_t, std::vector<cv::Mat>> class_scores;
 
         uint texName;
         bool Ischanged;

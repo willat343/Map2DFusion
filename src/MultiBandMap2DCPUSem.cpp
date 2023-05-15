@@ -395,10 +395,10 @@ bool MultiBandMap2DCPUSem::feed(cv::Mat img, cv::Mat sem, const pi::SE3d &pose) 
 
         // Insert new frame
         p->_frames.push_back(frame);
-        // If more than 20 frames in queue remove the oldest one
-        if (p->_frames.size() > 20) {
-            p->_frames.pop_front();
-        }
+        // // If more than 20 frames in queue remove the oldest one
+        // if (p->_frames.size() > 20) {
+        //     p->_frames.pop_front();
+        // }
 
         return true;
     } else {
@@ -602,6 +602,12 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
     std::vector<cv::Mat> pyr_laplace;
     cv::detail::createLaplacePyr(image_warped, _bandNum, pyr_laplace);
 
+    // Semantic segmentation method:
+    // 0 = RGB unchanged, priority sem
+    // 1 = Semantic pyramid with priorities
+    // 2 = Accumulate class scores
+    int sem_method = svar.GetInt("Map2D.SemMethod", 1);
+
     // Create the corresponding weight pyramid, by creating K + 1 pyramidal weight images.
     std::vector<cv::Mat> pyr_weights(_bandNum + 1);
     std::vector<cv::Mat> pyr_sem(_bandNum + 1);
@@ -609,8 +615,10 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
     pyr_sem[0] = sem_warped;
     for (int i = 0; i < _bandNum; ++i) {
         cv::pyrDown(pyr_weights[i], pyr_weights[i + 1]);
-        cv::resize(pyr_sem[i], pyr_sem[i + 1], cv::Size(pyr_sem[i].cols / 2, pyr_sem[i].rows / 2), 0.0, 0.0,
-                cv::INTER_NEAREST);
+        if (sem_method > 0) {
+            cv::resize(pyr_sem[i], pyr_sem[i + 1], cv::Size(pyr_sem[i].cols / 2, pyr_sem[i].rows / 2), 0.0, 0.0,
+                    cv::INTER_NEAREST);
+        }
     }
 
     pi::timer.enter("MultiBandMap2DCPUSem::Apply");
@@ -630,6 +638,9 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                 ele->pyr_laplace.resize(_bandNum + 1);
                 ele->weights.resize(_bandNum + 1);
                 ele->pyr_sem.resize(_bandNum + 1);
+                for (const auto &pixelid_label_pair : pixelid_to_label) {
+                    ele->class_scores[pixelid_label_pair.first].resize(_bandNum + 1);
+                }
             }
 
             // Iterate over the Laplacian pyramid levels. Start with width/height equal to the patch size (256x256) and
@@ -644,7 +655,14 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                     // laplacian pyramid and weights
                     pyr_laplace[i](rect).copyTo(ele->pyr_laplace[i]);
                     pyr_weights[i](rect).copyTo(ele->weights[i]);
-                    pyr_sem[i](rect).copyTo(ele->pyr_sem[i]);
+                    if (i == 0 || sem_method > 0) {
+                        pyr_sem[i](rect).copyTo(ele->pyr_sem[i]);
+                    }
+                    if (sem_method == 2) {
+                        for (const auto &pixelid_label_pair : pixelid_to_label) {
+                            ele->class_scores[pixelid_label_pair.first][i] = cv::Mat::zeros(height, width, CV_32F);
+                        }
+                    }
                 } else {
                     //// Case 2: Element is not new and blending is required
 
@@ -674,21 +692,83 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
-                                // Weight increase
-                                bool weight_increase = *srcW >= *dstW;
+                                switch (sem_method) {
+                                    case 0:
+                                    {
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
 
-                                // Compute priorities of pixels
-                                int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
-                                int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
-
-                                // Update semantic segentation if priority increases or equal and weight increases
-                                if (srcPriority > dstPriority || (srcPriority == dstPriority && weight_increase)) {
-                                    *dstSem = *srcSem;
-                                    // Update the RGB if the weight increases or moving from 1 -> 2
-                                    if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
-                                        *dstL = *srcL;
-                                        *dstW = *srcW;
+                                        // If the weight is higher in the (new) image for this pixel than saved in the
+                                        // element, then update the laplacian pyramid pixel value and weight value in
+                                        // the element.
+                                        if (weight_increase) {
+                                            *dstL = *srcL;
+                                            *dstW = *srcW;
+                                            // Update with highest priority
+                                            if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
+                                                                  pixelid_to_label.at(pixelid(*dstSem)).priority) {
+                                                *dstSem = *srcSem;
+                                            }
+                                        }
+                                        break;
                                     }
+                                    case 1:
+                                    {
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
+
+                                        // Compute priorities of pixels
+                                        int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
+                                        int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
+
+                                        // Update semantic segentation if priority increases or equal and weight
+                                        // increases
+                                        if (srcPriority > dstPriority ||
+                                                (srcPriority == dstPriority && weight_increase)) {
+                                            *dstSem = *srcSem;
+                                            // Update the RGB if the weight increases or moving from 1 -> 2
+                                            if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
+                                                *dstL = *srcL;
+                                                *dstW = *srcW;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    case 2:
+                                    {
+                                        // Compute pixel ids
+                                        std::uint32_t src_pixelid = pixelid(*srcSem);
+                                        // Update the class score
+                                        ele->class_scores.at(src_pixelid)[i].at<float>(eleY, eleX) += *srcW;
+
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
+
+                                        // Update only possible if weight increases
+                                        if (weight_increase) {
+                                            // Compute class majority
+                                            float majority_class_score = 0.f;
+                                            std::uint32_t majority_class = src_pixelid;
+                                            for (const auto &pixelid_score_pair : ele->class_scores) {
+                                                if (pixelid_score_pair.second[i].at<float>(eleY, eleX) >
+                                                                majority_class_score &&
+                                                        pixelid_to_label.at(pixelid_score_pair.first).priority > 0) {
+                                                    majority_class = pixelid_score_pair.first;
+                                                }
+                                            }
+
+                                            // Update if the new pixel is the same class as the majority
+                                            if (majority_class == src_pixelid) {
+                                                *dstL = *srcL;
+                                                *dstW = *srcW;
+                                                *dstSem = *srcSem;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    default:
+                                        throw std::runtime_error(
+                                                "SemMethod " + std::to_string(sem_method) + " not recognised.");
                                 }
                             }
                         }
@@ -709,21 +789,83 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
                         for (int eleY = 0; eleY < height; eleY++, srcL += skip, srcW += skip, srcSem += skip) {
                             for (int eleX = 0; eleX < width;
                                     eleX++, srcL++, dstL++, srcW++, dstW++, srcSem++, dstSem++) {
-                                // Weight increase
-                                bool weight_increase = *srcW >= *dstW;
+                                switch (sem_method) {
+                                    case 0:
+                                    {
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
 
-                                // Compute priorities of pixels
-                                int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
-                                int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
-
-                                // Update semantic segentation if priority increases or equal and weight increases
-                                if (srcPriority > dstPriority || (srcPriority == dstPriority && weight_increase)) {
-                                    *dstSem = *srcSem;
-                                    // Update the RGB if the weight increases or moving from 1 -> 2
-                                    if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
-                                        *dstL = *srcL;
-                                        *dstW = *srcW;
+                                        // If the weight is higher in the (new) image for this pixel than saved in the
+                                        // element, then update the laplacian pyramid pixel value and weight value in
+                                        // the element.
+                                        if (weight_increase) {
+                                            *dstL = *srcL;
+                                            *dstW = *srcW;
+                                            // Update with highest priority
+                                            if (i == 0 && pixelid_to_label.at(pixelid(*srcSem)).priority >=
+                                                                  pixelid_to_label.at(pixelid(*dstSem)).priority) {
+                                                *dstSem = *srcSem;
+                                            }
+                                        }
+                                        break;
                                     }
+                                    case 1:
+                                    {
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
+
+                                        // Compute priorities of pixels
+                                        int srcPriority = pixelid_to_label.at(pixelid(*srcSem)).priority;
+                                        int dstPriority = pixelid_to_label.at(pixelid(*dstSem)).priority;
+
+                                        // Update semantic segentation if priority increases or equal and weight
+                                        // increases
+                                        if (srcPriority > dstPriority ||
+                                                (srcPriority == dstPriority && weight_increase)) {
+                                            *dstSem = *srcSem;
+                                            // Update the RGB if the weight increases or moving from 1 -> 2
+                                            if (weight_increase || (dstPriority == 1 && srcPriority == 2)) {
+                                                *dstL = *srcL;
+                                                *dstW = *srcW;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    case 2:
+                                    {
+                                        // Compute pixel ids
+                                        std::uint32_t src_pixelid = pixelid(*srcSem);
+                                        // Update the class score
+                                        ele->class_scores.at(src_pixelid)[i].at<float>(eleY, eleX) += *srcW;
+
+                                        // Weight increase
+                                        bool weight_increase = *srcW >= *dstW;
+
+                                        // Update only possible if weight increases
+                                        if (weight_increase) {
+                                            // Compute class majority
+                                            float majority_class_score = 0.f;
+                                            std::uint32_t majority_class = src_pixelid;
+                                            for (const auto &pixelid_score_pair : ele->class_scores) {
+                                                if (pixelid_score_pair.second[i].at<float>(eleY, eleX) >
+                                                                majority_class_score &&
+                                                        pixelid_to_label.at(pixelid_score_pair.first).priority > 0) {
+                                                    majority_class = pixelid_score_pair.first;
+                                                }
+                                            }
+
+                                            // Update if the new pixel is the same class as the majority
+                                            if (majority_class == src_pixelid) {
+                                                *dstL = *srcL;
+                                                *dstW = *srcW;
+                                                *dstSem = *srcSem;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    default:
+                                        throw std::runtime_error(
+                                                "SemMethod " + std::to_string(sem_method) + " not recognised.");
                                 }
                             }
                         }

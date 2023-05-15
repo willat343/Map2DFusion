@@ -143,8 +143,10 @@ public:
         string imgFileName;
         string semFileName;
 
+        string sem_dir = "/" + svar.GetString("Map2D.SemDir", "sem") + "/";
+
         ifs >> imgFileName;  // Reads until the first space in trajectory.txt, which is the timestamp
-        semFileName = datapath + "/sem/" + imgFileName + ".png";
+        semFileName = datapath + sem_dir + imgFileName + ".png";
         // Get image file path (the image files are names by timestamps)
         imgFileName = datapath + "/rgb/" + imgFileName + ".jpg";
 
@@ -162,7 +164,7 @@ public:
         if (svar.GetInt("Map2D.Type", 0) == 5) {
             pi::timer.enter("obtainFrame");  // Start image read timer
             frame.sem =
-                    cv::imread(semFileName);  // Read image, frame.first corresponds to the first element of the pair
+                    cv::imread(semFileName);  // Rea"/sem/"d image, frame.first corresponds to the first element of the pair
             pi::timer.leave("obtainFrame");   // End image read timer
 
             if (frame.sem.empty()) {
