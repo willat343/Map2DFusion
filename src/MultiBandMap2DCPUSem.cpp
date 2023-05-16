@@ -579,7 +579,7 @@ bool MultiBandMap2DCPUSem::renderFrame(const CameraFrame &frame) {
 
     // Apply the warp to the RGB image and weight image. For the RGB image, use linear interpolation and reflect at the
     // borders. For the weight image, interpolate to the nearest pixel and use default constant border.
-    cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR);//, cv::BORDER_REFLECT);
+    cv::warpPerspective(img_src, image_warped, transmtx, image_warped.size(), cv::INTER_LINEAR, cv::BORDER_REFLECT);
     cv::warpPerspective(weight_src, weight_warped, transmtx, weight_warped.size(), cv::INTER_NEAREST);
     cv::warpPerspective(frame.sem, sem_warped, transmtx, sem_warped.size(), cv::INTER_NEAREST);
 
