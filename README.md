@@ -30,6 +30,7 @@ If you use this project for research, please cite our paper:
 }
 ```
 
+___
 ## Build
 
 This has been adapted from [git@gitee.com:pi-lab/Map2DFusion.git](git@gitee.com:pi-lab/Map2DFusion.git) for Ubuntu 20.04.
@@ -93,7 +94,43 @@ Note that you may get the following linker warning due to the use of the old `lu
 /home/william/src/Map2DFusion/Thirdpart/lua-5.1.5/src/loslib.c:60: warning: the use of `tmpnam' is dangerous, better use `mkstemp'
 ```
 
-## Usage
+___
+## Usage (Dynamic Object Removal)
+
+### Setup
+
+In the file `Default.cfg` inside the root directory of Map2DFusion the parameter `Map2D.Type` has to be set to `5`.
+
+The following parameters can be configured:
+
+|  Parameter              |                                                                      Description                                                                           |
+|  :---                   |                                                                  :-----------------                                                                        |
+|  Map2D.Type             |  **Type 0:** Map2D, **Type 1:** Map2DCPU, **Type 2:** Map2DGPU, **Type 3:** MultiBandMap2DCPU, **Type 4:** Map2DRender, **Type 5:** MultiBandMap2DCPUSem.  |
+|  Map2D.SemDir           |  Semantic segmentation directory. In the case of the proposed datasets can be `sem` or `sem_dilated`.                                                      |
+|  Map2D.SemLabels        |  Location of the `labels.txt` file.                                                                                                                        |
+|  Map2D.ShowSemBlending  |  Flag for changing between the visualization of the semantic segmentation orthomosaic creation or the RGB orthomosaic creation.                            |
+
+### Download Datasets
+
+Download from [https://polybox.ethz.ch/index.php/s/7GgeCEqXuemsaBb](https://polybox.ethz.ch/index.php/s/7GgeCEqXuemsaBb).
+
+The remaining instructions will assume they are downloaded in `~/data`
+
+### Run
+
+The `map2dfusion` executable will be in your `build` folder after compilation.
+
+```bash
+cd build
+./map2dfusion conf=../Default.cfg DataPath=$HOME/data/phantom3-village-kfs
+```
+
+___
+## Usage (Original)
+
+### Setup
+
+In the file `Default.cfg` inside the root directory of Map2DFusion the parameter `Map2D.Type` has to be set to `3`.
 
 ### Download Datasets
 
